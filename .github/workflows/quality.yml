@@ -1,0 +1,46 @@
+name: Source Quality
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: context-pack-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Syntax check
+        run: npm run check
+
+      - name: Tests with coverage
+        run: npm run test:coverage
+
+      - name: Package verification
+        run: npm run verify:package
+
+      - name: Benchmark smoke test
+        run: BENCH_FILES=1000 npm run benchmark
+
+      - name: Verify package contents
+        run: npm pack --dry-run
