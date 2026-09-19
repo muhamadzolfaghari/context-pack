@@ -1,0 +1,27 @@
+{
+  "name": "context-pack",
+  "version": "1.0.0",
+  "description": "Interactive CLI for packaging selected project files into portable context bundles.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "cxd": "./bin/cli.mjs"
+  },
+  "keywords": [
+    "context",
+    "cli",
+    "developer-tools"
+  ],
+  "author": "Mohammad Zolfaghari",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@inquirer/prompts": "^8.4.3",
+    "chalk": "^5.6.2",
+    "inquirer-fuzzy-path": "^2.3.0",
+    "readline": "^1.3.0"
+  },
+  "packageManager": "pnpm@9.15.0+sha512.76e2379760a4328ec4415815bcd6628dee727af3779aaa4c914e3944156c4299921a89f976381ee107d41f12cfa4b66681ca9c718f0668fa0831ed4c6d8ba56c"
+}
