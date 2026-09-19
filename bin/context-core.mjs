@@ -291,9 +291,18 @@ export function buildSmartPack(options) {
     addReason(rel, seeds.exact.has(rel) ? "selected-file" : "selected-directory");
   }
 
-  const roots = seeds.selected.size
-    ? Array.from(seeds.selected)
-    : scan.files.filter(function (f) { return structuralScore(f.path) >= 1500; }).slice(0, 12).map(function (f) { return f.path; });
+  const focusRoots = terms.length
+    ? scan.files
+        .filter(function (f) { return reasons.get(f.path)?.has("focus-match"); })
+        .sort(function (a, b) { return (scores.get(b.path) || 0) - (scores.get(a.path) || 0) || a.path.localeCompare(b.path); })
+        .slice(0, 24)
+        .map(function (f) { return f.path; })
+    : [];
+  const structuralRoots = scan.files
+    .filter(function (f) { return structuralScore(f.path) >= 1500; })
+    .slice(0, 12)
+    .map(function (f) { return f.path; });
+  const roots = Array.from(new Set(Array.from(seeds.selected).concat(focusRoots, structuralRoots)));
   const queue = roots.map(function (rel) { return { rel: rel, depth: 0 }; });
   const seen = new Map();
   const maxDepth = options.dependencyDepth === undefined ? 4 : Math.max(0, options.dependencyDepth);
@@ -332,7 +341,8 @@ export function buildSmartPack(options) {
   let totalTokens = 0;
 
   for (const candidate of candidates) {
-    const useful = candidate.required || candidate.score >= 450 || selected.length === 0;
+    const relevanceFloor = terms.length ? 800 : 450;
+    const useful = candidate.required || candidate.score >= relevanceFloor || selected.length === 0;
     if (!useful) {
       omitted.push({ path: candidate.path, tokens: candidate.estimatedTokens, reason: "low-relevance" });
       continue;
