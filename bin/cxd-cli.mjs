@@ -6,6 +6,39 @@ import readline from "readline";
 import crypto from "crypto";
 import { execSync } from "child_process";
 
+const CONTEXT_WINDOWS = {
+  small: 8000,
+  medium: 32000,
+  large: 128000,
+  xlarge: 1000000,
+};
+
+const IGNORE_PATTERNS = [
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "coverage",
+  ".next",
+  ".nuxt",
+  ".vercel",
+  ".netlify",
+  "*.lock",
+  "package-lock.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  "*.min.js",
+  "*.min.css",
+  "*.map",
+  "*.log",
+  ".env",
+  ".env.*",
+  "*.tsbuildinfo",
+  ".turbo",
+  ".cache",
+  "*.tsbuildinfo",
+];
+
 /* ---------------- CLIPBOARD ---------------- */
 
 // stdio: ['pipe','pipe','ignore'] — suppress the child process's own stderr
@@ -84,9 +117,8 @@ const ROOT = process.cwd();
 let searchQuery = "";
 let scrollOffset = 0;
 
-function getViewportHeight() {
-  return process.stdout.rows ? Math.max(8, process.stdout.rows - 11) : 16;
-}
+/* FORMAT STATE */
+let outputFormat = "markdown"; // "json" | "markdown"
 
 /* NAVIGATION HISTORY */
 const dirHistory = [];
@@ -94,12 +126,22 @@ const dirHistory = [];
 /* CACHE */
 const dirCache = new Map();
 
+/* GITIGNORE */
+let gitignorePatterns = loadGitignore(ROOT);
+
 /* ---------------- MENU ---------------- */
 
 const menu = [
   { key: "folder", label: "Folders → Export Dump" },
   { key: "clipboard", label: "Clipboard → Recreate Project" },
 ];
+
+const formatMenu = [
+  { key: "json", label: "JSON (structured)" },
+  { key: "markdown", label: "Markdown (readable)" },
+];
+
+let formatCursor = 0;
 
 /* ---------------- HELPERS ---------------- */
 
@@ -115,6 +157,57 @@ function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function estimateTokens(text) {
+  return Math.ceil(text.length / 4);
+}
+
+function formatTokens(tokens) {
+  if (tokens < 1000) return `${tokens} tokens`;
+  if (tokens < 1000000) return `${(tokens / 1000).toFixed(1)}k tokens`;
+  return `${(tokens / 1000000).toFixed(1)}M tokens`;
+}
+
+function getViewportHeight() {
+  return process.stdout.rows ? Math.max(8, process.stdout.rows - 11) : 16;
+}
+
+function getContextWindowWarning(totalTokens) {
+  if (totalTokens > CONTEXT_WINDOWS.xlarge) return `\x1b[31m⚠ Exceeds 1M token context\x1b[0m`;
+  if (totalTokens > CONTEXT_WINDOWS.large) return `\x1b[33m⚠ Exceeds 128k token context\x1b[0m`;
+  if (totalTokens > CONTEXT_WINDOWS.medium) return `\x1b[33m⚠ Exceeds 32k token context\x1b[0m`;
+  if (totalTokens > CONTEXT_WINDOWS.small) return `\x1b[33m⚠ Exceeds 8k token context\x1b[0m`;
+  return null;
+}
+
+function loadGitignore(dir) {
+  const gitignorePath = path.join(dir, ".gitignore");
+  const patterns = [...IGNORE_PATTERNS];
+  
+  try {
+    const content = fs.readFileSync(gitignorePath, "utf8");
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith("#")) {
+        patterns.push(trimmed);
+      }
+    }
+  } catch {}
+  
+  return patterns;
+}
+
+function matchPatterns(name, relPath, patterns) {
+  for (const pattern of patterns) {
+    if (pattern.includes("*")) {
+      const regex = new RegExp("^" + pattern.replace(/\*/g, ".*") + "$");
+      if (regex.test(name) || regex.test(relPath)) return true;
+    } else if (name === pattern || relPath === pattern || relPath.startsWith(pattern + "/")) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /* FUZZY SEARCH SCORE */
@@ -147,7 +240,13 @@ function listDir(dir) {
   try {
     return fs
       .readdirSync(dir, { withFileTypes: true })
-      .filter((d) => !d.name.startsWith(".") && d.name !== "node_modules")
+      .filter((d) => {
+        if (d.name.startsWith(".") && d.name !== ".gitignore") return false;
+        if (d.name === "node_modules") return false;
+        const full = path.join(dir, d.name);
+        const rel = path.relative(ROOT, full);
+        return !matchPatterns(d.name, rel, gitignorePatterns);
+      })
       .map((d) => ({
         name: d.name,
         path: path.join(dir, d.name),
@@ -176,10 +275,13 @@ function getAllItemsRecursive(dir = currentDir, prefix = "") {
     const items = fs.readdirSync(dir, { withFileTypes: true });
 
     for (const item of items) {
-      if (item.name.startsWith(".") || item.name === "node_modules") continue;
+      if (item.name.startsWith(".") && item.name !== ".gitignore") continue;
+      if (item.name === "node_modules") continue;
 
       const full = path.join(dir, item.name);
       const relPath = prefix ? `${prefix}/${item.name}` : item.name;
+
+      if (matchPatterns(item.name, relPath, gitignorePatterns)) continue;
 
       all.push({
         name: item.name,
@@ -257,14 +359,65 @@ function collectFilesFromPath(p, out = new Set()) {
   return out;
 }
 
+function buildProjectTree(dumpFiles) {
+  const rels = new Map();
+
+  for (const full of dumpFiles) {
+    rels.set(path.relative(ROOT, full).split(path.sep).join("/"), "file");
+  }
+
+  const parentDirs = new Set();
+  for (const rel of rels.keys()) {
+    const parts = rel.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      parentDirs.add(parts.slice(0, i).join("/"));
+    }
+  }
+
+  const allNodes = new Set([...rels.keys(), ...parentDirs]);
+
+  const children = new Map();
+  for (const node of allNodes) {
+    const idx = node.lastIndexOf("/");
+    const parent = idx === -1 ? "." : node.slice(0, idx);
+    const name = idx === -1 ? node : node.slice(idx + 1);
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent).push({ name, path: node, isDir: !rels.has(node) });
+  }
+
+  for (const list of children.values()) {
+    list.sort((a, b) =>
+      a.isDir !== b.isDir ? (a.isDir ? -1 : 1) : a.name.localeCompare(b.name),
+    );
+  }
+
+  const lines = ["."];
+
+  function walk(nodePath, depth) {
+    const list = children.get(nodePath) || [];
+    for (const child of list) {
+      const indent = "  ".repeat(depth);
+      const branch = list.indexOf(child) === list.length - 1 ? "└── " : "├── ";
+      const suffix = child.isDir ? "/" : "";
+      lines.push(`${indent}${branch}${child.name}${suffix}`);
+      if (child.isDir) walk(child.path, depth + 1);
+    }
+  }
+
+  walk(".", 0);
+  return lines.join("\n");
+}
+
 function buildDump() {
   const files = new Set();
+  let totalTokens = 0;
 
   for (const p of selected) {
     collectFilesFromPath(p, files);
   }
 
   const out = {};
+  const fileTokens = {};
 
   for (const f of files) {
     try {
@@ -277,20 +430,57 @@ function buildDump() {
 
       if (!content.trim()) continue;
 
+      const tokens = estimateTokens(content);
+      totalTokens += tokens;
+      fileTokens[f] = tokens;
+
       out[f] = {
         content,
         hash: crypto.createHash("sha1").update(content).digest("hex"),
         lines: content.split("\n").length,
+        tokens,
       };
     } catch {}
   }
 
-  return out;
+  const tree = buildProjectTree(files);
+  const totalOnDisk = getAllItemsRecursive(currentDir).filter(
+    (i) => i.type === "file",
+  ).length;
+
+  return {
+    files: out,
+    tree,
+    totalTokens,
+    fileTokens,
+    totalOnDisk,
+  };
+}
+
+function buildMarkdownDump(dump) {
+  const count = Object.keys(dump.files).length;
+  const scope =
+    dump.totalOnDisk && dump.totalOnDisk !== count
+      ? ` · ${count} of ${dump.totalOnDisk} files on disk`
+      : "";
+  const files = Object.keys(dump.files);
+
+  let md = `# Context Dump: ${count} file${count === 1 ? "" : "s"}${scope} · ${formatTokens(dump.totalTokens)}\n`;
+  md += `\`\`\`\n${dump.tree}\n\`\`\`\n`;
+
+  for (const filepath of files) {
+    const info = dump.files[filepath];
+    const rel = path.relative(ROOT, filepath);
+    const ext = path.extname(filepath).slice(1) || "txt";
+    md += `\n## ${rel}\n\`\`\`${ext}\n${info.content}\n\`\`\`\n`;
+  }
+
+  return md;
 }
 
 function exportDump() {
   const dump = buildDump();
-  const keys = Object.keys(dump);
+  const keys = Object.keys(dump.files);
 
   if (!keys.length) {
     doneMessage = ["No items selected."];
@@ -298,15 +488,27 @@ function exportDump() {
     return;
   }
 
-  const json = JSON.stringify(dump, null, 2);
-  const ok = writeClipboard(json);
-  const size = formatBytes(Buffer.byteLength(json, "utf8"));
+  let output;
+  if (outputFormat === "markdown") {
+    output = buildMarkdownDump(dump);
+  } else {
+    output = JSON.stringify(dump, null, 2);
+  }
+
+  const ok = writeClipboard(output);
+  const size = formatBytes(Buffer.byteLength(output, "utf8"));
+  const tokenStr = formatTokens(dump.totalTokens);
+  const warning = getContextWindowWarning(dump.totalTokens);
 
   doneMessage = ok
-    ? [`Dump copied to clipboard.`, `${keys.length} files · ${size}`]
+    ? [
+        `Dump copied to clipboard (\x1b[1m${outputFormat}\x1b[0m).`,
+        `${keys.length} files · ${size} · ${tokenStr}`,
+        ...(warning ? [warning] : []),
+      ]
     : [
         `Could not write to clipboard.`,
-        `(${keys.length} files, ${size} — is xclip/pbcopy installed?)`,
+        `(${keys.length} files, ${size}, ${tokenStr} — is xclip/pbcopy installed?)`,
       ];
 
   mode = MODE.DONE;
@@ -325,6 +527,7 @@ function reset() {
   dirHistory.length = 0;
   clipboardData = null;
   doneMessage = [];
+  formatCursor = 0;
 }
 
 /* ---------------- RENDER ---------------- */
@@ -340,7 +543,9 @@ function renderMain() {
     console.log(`${pointer} ${label}`);
   });
 
-  console.log("\n  \x1b[2m↑↓ move · Enter select · q/Esc quit\x1b[0m");
+  console.log(`\n  Format: \x1b[36m${outputFormat}\x1b[0m  (press f to change)`);
+
+  console.log("\n  \x1b[2m↑↓ move · Enter select · f format · q/Esc quit\x1b[0m");
 }
 
 function enterDir(dirPath) {
@@ -386,7 +591,7 @@ function buildBreadcrumb() {
   return "... / " + parts.slice(-2).join(" / ");
 }
 
-function renderFolder() {
+function renderFolder(dump) {
   clear();
 
   const items = getFilteredItems();
@@ -451,6 +656,12 @@ function renderFolder() {
       else color = "";
 
       let label = `${color}${displayName}${suffix}\x1b[0m`;
+      
+      // Show token count for files
+      if (!isDir && dump && dump.fileTokens && dump.fileTokens[i.path]) {
+        label += ` \x1b[2m(${formatTokens(dump.fileTokens[i.path])})\x1b[0m`;
+      }
+      
       if (active) label = `\x1b[7m ${label}\x1b[27m`; // reverse video on the active row
 
       console.log(`${pointer} ${check} ${label}`);
@@ -543,7 +754,7 @@ function renderDone() {
 
 function render() {
   if (mode === MODE.MAIN) return renderMain();
-  if (mode === MODE.FOLDER) return renderFolder();
+  if (mode === MODE.FOLDER) return renderFolder(buildDump());
   if (mode === MODE.CLIPBOARD) return renderClipboard();
   if (mode === MODE.DONE) return renderDone();
 }
@@ -580,6 +791,10 @@ function start() {
 
       if (k === "up") mainCursor = Math.max(0, mainCursor - 1);
       if (k === "down") mainCursor = Math.min(menu.length - 1, mainCursor + 1);
+      
+      if (k === "f") {
+        outputFormat = outputFormat === "json" ? "markdown" : "json";
+      }
 
       if (k === "return") {
         mode =
