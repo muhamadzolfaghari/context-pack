@@ -1,32 +1,54 @@
 {
-  "name": "context-pack",
+  "name": "@muhamadzolfaghari/context-pack",
   "version": "1.0.0",
-  "description": "Interactive CLI for packaging selected project files into Markdown or JSON context bundles.",
+  "description": "Smart, deterministic, token-budgeted repository context packer for AI-assisted development workflows.",
   "bin": {
+    "context-pack": "./bin/cxd-cli.mjs",
     "cxd": "./bin/cxd-cli.mjs"
   },
+  "files": [
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "context",
     "context-window",
     "llm",
+    "ai",
     "cli",
     "developer-tools",
-    "token-estimation"
+    "token-budget",
+    "code-context",
+    "repository"
   ],
   "author": {
     "name": "Mohammad Zolfaghari",
     "url": "https://github.com/muhamadzolfaghari"
   },
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage",
+    "check": "node --check bin/context-core.mjs && node --check bin/cxd-cli.mjs",
+    "benchmark": "node scripts/benchmark.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
+    "prepublishOnly": "npm run check && npm test && npm run verify:package"
   },
   "engines": {
     "node": ">=18"
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/muhamadzolfaghari/context-pack.git"
-  }
+  },
+  "bugs": {
+    "url": "https://github.com/muhamadzolfaghari/context-pack/issues"
+  },
+  "homepage": "https://github.com/muhamadzolfaghari/context-pack#readme"
 }
