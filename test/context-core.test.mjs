@@ -80,6 +80,18 @@ test("focus selection respects tight budget", function () {
   assert.equal(Boolean(pack.files["src/avatar.js"]), false);
 });
 
+test("focused files become dependency roots and unrelated src files stay out", function () {
+  const root = fixture({
+    "src/checkout.js": "import { send } from './transport.js';\nexport function checkout(){ return send('payment retry'); }\n",
+    "src/transport.js": "export function send(value){ return value; }\n",
+    "src/unrelated.js": "export function profileAvatar(){ return 'avatar'; }\n"
+  });
+  const pack = buildSmartPack({ root: root, focus: "payment retry checkout", budget: 5000 });
+  assert.ok(pack.files["src/checkout.js"]);
+  assert.ok(pack.files["src/transport.js"]);
+  assert.equal(Boolean(pack.files["src/unrelated.js"]), false);
+});
+
 test("exact selected file can exceed budget", function () {
   const root = fixture({ "big.js": "export const x = 1;\n".repeat(300) });
   const pack = buildSmartPack({ root: root, seeds: ["big.js"], budget: 10 });
