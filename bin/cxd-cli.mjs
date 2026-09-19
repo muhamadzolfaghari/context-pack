@@ -1,915 +1,316 @@
 #!/usr/bin/env node
 
-import fs from "fs";
-import path from "path";
-import readline from "readline";
-import crypto from "crypto";
-import { execSync } from "child_process";
+import fs from "node:fs";
+import path from "node:path";
+import readline from "node:readline";
+import { execFileSync } from "node:child_process";
+import {
+  DEFAULT_BUDGET,
+  buildSmartPack,
+  formatTokens,
+  parseBudget,
+  renderMarkdown,
+  restorePack,
+  scanProject
+} from "./context-core.mjs";
 
-const CONTEXT_WINDOWS = {
-  small: 8000,
-  medium: 32000,
-  large: 128000,
-  xlarge: 1000000,
-};
+const VERSION = "1.0.0";
+const ROOT = process.cwd();
+const BUDGETS = [8000, 32000, 128000, 1000000];
 
-const IGNORE_PATTERNS = [
-  "node_modules",
-  ".git",
-  "dist",
-  "build",
-  "coverage",
-  ".next",
-  ".nuxt",
-  ".vercel",
-  ".netlify",
-  "*.lock",
-  "package-lock.json",
-  "yarn.lock",
-  "pnpm-lock.yaml",
-  "*.min.js",
-  "*.min.css",
-  "*.map",
-  "*.log",
-  ".env",
-  ".env.*",
-  "*.tsbuildinfo",
-  ".turbo",
-  ".cache",
-  "*.tsbuildinfo",
-];
+function help() {
+  console.log([
+    "context-pack " + VERSION,
+    "",
+    "Usage:",
+    "  context-pack [paths...] [options]",
+    "  cxd [paths...] [options]",
+    "",
+    "Options:",
+    "  --focus, --task <text>   Focus description used for smart relevance",
+    "  --budget <tokens>        Token budget: 8000, 32k, 1m (default: 32k)",
+    "  --format <md|json>       Output format (default: markdown)",
+    "  --output, -o <file>      Write output to a file",
+    "  --stdout                 Print output to stdout",
+    "  --copy                   Copy output to the clipboard",
+    "  --depth <n>              Local dependency expansion depth (default: 4)",
+    "  --max-file-bytes <n>     Skip larger files (default: 1000000)",
+    "  --ignore <pattern>       Add ignore pattern; repeatable",
+    "  --restore <file.json>    Safely restore a JSON pack",
+    "  --overwrite              Allow restore to replace existing files",
+    "  --version, -v            Print version",
+    "  --help, -h               Show help",
+    "",
+    "Examples:",
+    "  context-pack src/auth --focus \"refresh token flow\" --budget 32k --stdout",
+    "  context-pack src api --focus \"checkout request lifecycle\" -o context.md",
+    "  context-pack --focus \"application architecture\" --budget 128k --copy",
+    "  context-pack --restore context.json"
+  ].join("\n"));
+}
 
-/* ---------------- CLIPBOARD ---------------- */
+function parseArgs(argv) {
+  const options = {
+    seeds: [], ignore: [], format: "markdown", budget: DEFAULT_BUDGET,
+    dependencyDepth: 4, maxFileBytes: 1000000, focus: "",
+    stdout: false, copy: false, output: null, restore: null, overwrite: false
+  };
 
-// stdio: ['pipe','pipe','ignore'] — suppress the child process's own stderr
-// (e.g. "xclip: not found") so failures are reported only through our own
-// try/catch + UI message, never leaked raw to the terminal underneath the TUI.
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    const next = function () {
+      i++;
+      if (argv[i] === undefined) throw new Error("Missing value for " + arg);
+      return argv[i];
+    };
+
+    if (arg === "--help" || arg === "-h") options.help = true;
+    else if (arg === "--version" || arg === "-v") options.version = true;
+    else if (arg === "--focus" || arg === "--task") options.focus = next();
+    else if (arg === "--budget") options.budget = parseBudget(next());
+    else if (arg === "--format") {
+      const value = next().toLowerCase();
+      if (!["md", "markdown", "json"].includes(value)) throw new Error("Unsupported format: " + value);
+      options.format = value === "json" ? "json" : "markdown";
+    } else if (arg === "--output" || arg === "-o") options.output = next();
+    else if (arg === "--stdout") options.stdout = true;
+    else if (arg === "--copy") options.copy = true;
+    else if (arg === "--depth") options.dependencyDepth = Math.max(0, Number.parseInt(next(), 10));
+    else if (arg === "--max-file-bytes") options.maxFileBytes = Math.max(1, Number.parseInt(next(), 10));
+    else if (arg === "--ignore") options.ignore.push(next());
+    else if (arg === "--restore") options.restore = next();
+    else if (arg === "--overwrite") options.overwrite = true;
+    else if (arg.startsWith("-")) throw new Error("Unknown option: " + arg);
+    else options.seeds.push(arg);
+  }
+  return options;
+}
+
 function readClipboard() {
   try {
-    if (process.platform === "darwin") {
-      return execSync("pbpaste", {
-        encoding: "utf8",
-        stdio: ["pipe", "pipe", "ignore"],
-      });
-    }
-    if (process.platform === "linux") {
-      return execSync("xclip -selection clipboard -o", {
-        encoding: "utf8",
-        stdio: ["pipe", "pipe", "ignore"],
-      });
-    }
-    if (process.platform === "win32") {
-      return execSync("Get-Clipboard -Raw", {
-        shell: "powershell.exe",
-        encoding: "utf8",
-        stdio: ["pipe", "pipe", "ignore"],
-      });
-    }
+    if (process.platform === "darwin") return execFileSync("pbpaste", [], { encoding: "utf8" });
+    if (process.platform === "linux") return execFileSync("xclip", ["-selection", "clipboard", "-o"], { encoding: "utf8" });
+    if (process.platform === "win32") return execFileSync("powershell.exe", ["-NoProfile", "-Command", "Get-Clipboard -Raw"], { encoding: "utf8" });
   } catch {}
   return null;
 }
 
 function writeClipboard(text) {
   try {
-    if (process.platform === "darwin") {
-      execSync("pbcopy", { input: text, stdio: ["pipe", "pipe", "ignore"] });
-    }
-    if (process.platform === "linux") {
-      execSync("xclip -selection clipboard", {
-        input: text,
-        stdio: ["pipe", "pipe", "ignore"],
-      });
-    }
-    if (process.platform === "win32") {
-      execSync(`Set-Clipboard -Value @'\n${text}\n'@`, {
-        shell: "powershell.exe",
-        stdio: ["pipe", "pipe", "ignore"],
-      });
-    }
+    if (process.platform === "darwin") execFileSync("pbcopy", [], { input: text });
+    else if (process.platform === "linux") execFileSync("xclip", ["-selection", "clipboard"], { input: text });
+    else if (process.platform === "win32") execFileSync("powershell.exe", ["-NoProfile", "-Command", "Set-Clipboard -Value ([Console]::In.ReadToEnd())"], { input: text });
+    else return false;
     return true;
   } catch {
     return false;
   }
 }
 
-/* ---------------- STATE ---------------- */
+function renderOutput(pack, format) {
+  return format === "json" ? JSON.stringify(pack, null, 2) + "\n" : renderMarkdown(pack);
+}
 
-const MODE = {
-  MAIN: "main",
-  CLIPBOARD: "clipboard",
-  FOLDER: "folder",
-  DONE: "done",
-};
+function runNonInteractive(options) {
+  if (options.restore) {
+    const pack = JSON.parse(fs.readFileSync(path.resolve(options.restore), "utf8"));
+    const result = restorePack(pack, ROOT, { overwrite: options.overwrite });
+    console.error("Restored " + result.restored.length + " files; skipped " + result.skipped.length + ".");
+    return;
+  }
 
-let mode = MODE.MAIN;
-let doneMessage = [];
+  const pack = buildSmartPack({
+    root: ROOT,
+    seeds: options.seeds,
+    focus: options.focus,
+    budget: options.budget,
+    dependencyDepth: options.dependencyDepth,
+    maxFileBytes: options.maxFileBytes,
+    ignore: options.ignore
+  });
+  const output = renderOutput(pack, options.format);
 
-let mainCursor = 0;
-let cursor = 0;
+  if (options.output) {
+    const destination = path.resolve(options.output);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.writeFileSync(destination, output, "utf8");
+  }
+  if (options.copy && !writeClipboard(output)) throw new Error("Clipboard write failed. Use --stdout or --output.");
+  if (options.stdout || (!options.output && !options.copy)) process.stdout.write(output);
 
-let selected = new Set();
-let clipboardData = null;
-
-let currentDir = process.cwd();
-const ROOT = process.cwd();
-
-/* SEARCH/FILTER STATE */
-let searchQuery = "";
-let scrollOffset = 0;
-
-/* FORMAT STATE */
-let outputFormat = "markdown"; // "json" | "markdown"
-
-/* NAVIGATION HISTORY */
-const dirHistory = [];
-
-/* CACHE */
-const dirCache = new Map();
-
-/* GITIGNORE */
-let gitignorePatterns = loadGitignore(ROOT);
-
-/* ---------------- MENU ---------------- */
-
-const menu = [
-  { key: "folder", label: "Folders → Export Dump" },
-  { key: "clipboard", label: "Clipboard → Recreate Project" },
-];
-
-const formatMenu = [
-  { key: "json", label: "JSON (structured)" },
-  { key: "markdown", label: "Markdown (readable)" },
-];
-
-let formatCursor = 0;
-
-/* ---------------- HELPERS ---------------- */
+  if (options.output || options.copy) {
+    console.error("Context pack: " + pack.selectedCount + "/" + pack.candidateCount + " files, " +
+      formatTokens(pack.totalTokens) + "/" + formatTokens(pack.budget) + " tokens.");
+  }
+}
 
 function keyName(key) {
-  return (key?.name || key?.sequence || "").toLowerCase();
+  return (key && (key.name || key.sequence) || "").toLowerCase();
 }
 
-function clear() {
-  console.clear();
-}
+function startInteractive() {
+  const scan = scanProject(ROOT);
+  const fileSet = new Set(scan.files.map(function (x) { return x.path; }));
+  let currentDir = ROOT;
+  let history = [];
+  let cursor = 0;
+  let selected = new Set();
+  let query = "";
+  let format = "markdown";
+  let budgetIndex = 1;
+  let mode = "browse";
+  let message = "";
 
-function formatBytes(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function estimateTokens(text) {
-  return Math.ceil(text.length / 4);
-}
-
-function formatTokens(tokens) {
-  if (tokens < 1000) return `${tokens} tokens`;
-  if (tokens < 1000000) return `${(tokens / 1000).toFixed(1)}k tokens`;
-  return `${(tokens / 1000000).toFixed(1)}M tokens`;
-}
-
-function getViewportHeight() {
-  return process.stdout.rows ? Math.max(8, process.stdout.rows - 11) : 16;
-}
-
-function getContextWindowWarning(totalTokens) {
-  if (totalTokens > CONTEXT_WINDOWS.xlarge) return `\x1b[31m⚠ Exceeds 1M token context\x1b[0m`;
-  if (totalTokens > CONTEXT_WINDOWS.large) return `\x1b[33m⚠ Exceeds 128k token context\x1b[0m`;
-  if (totalTokens > CONTEXT_WINDOWS.medium) return `\x1b[33m⚠ Exceeds 32k token context\x1b[0m`;
-  if (totalTokens > CONTEXT_WINDOWS.small) return `\x1b[33m⚠ Exceeds 8k token context\x1b[0m`;
-  return null;
-}
-
-function loadGitignore(dir) {
-  const gitignorePath = path.join(dir, ".gitignore");
-  const patterns = [...IGNORE_PATTERNS];
-  
-  try {
-    const content = fs.readFileSync(gitignorePath, "utf8");
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith("#")) {
-        patterns.push(trimmed);
-      }
-    }
-  } catch {}
-  
-  return patterns;
-}
-
-function matchPatterns(name, relPath, patterns) {
-  for (const pattern of patterns) {
-    if (pattern.includes("*")) {
-      const regex = new RegExp("^" + pattern.replace(/\*/g, ".*") + "$");
-      if (regex.test(name) || regex.test(relPath)) return true;
-    } else if (name === pattern || relPath === pattern || relPath.startsWith(pattern + "/")) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/* FUZZY SEARCH SCORE */
-function fuzzyScore(str, query) {
-  if (!query) return 100;
-
-  const s = str.toLowerCase();
-  const q = query.toLowerCase();
-
-  if (s === q) return 1000;
-  if (s.startsWith(q)) return 500;
-  if (s.includes(q)) return 300;
-
-  let score = 0;
-  let strIdx = 0;
-
-  for (let i = 0; i < q.length; i++) {
-    strIdx = s.indexOf(q[i], strIdx);
-    if (strIdx === -1) return 0;
-    score += 10;
-    strIdx++;
+  function canShow(rel) {
+    if (fileSet.has(rel)) return true;
+    const prefix = rel + "/";
+    for (const file of scan.files) if (file.path.startsWith(prefix)) return true;
+    return false;
   }
 
-  return score;
-}
-
-/* ---------------- FILE TREE ---------------- */
-
-function listDir(dir) {
-  try {
-    return fs
-      .readdirSync(dir, { withFileTypes: true })
-      .filter((d) => {
-        if (d.name.startsWith(".") && d.name !== ".gitignore") return false;
-        if (d.name === "node_modules") return false;
-        const full = path.join(dir, d.name);
-        const rel = path.relative(ROOT, full);
-        return !matchPatterns(d.name, rel, gitignorePatterns);
+  function items() {
+    let entries = [];
+    try { entries = fs.readdirSync(currentDir, { withFileTypes: true }); } catch { return []; }
+    const q = query.toLowerCase();
+    return entries
+      .filter(function (entry) { return !entry.isSymbolicLink(); })
+      .map(function (entry) {
+        const abs = path.join(currentDir, entry.name);
+        const rel = path.relative(ROOT, abs).split(path.sep).join("/");
+        return { name: entry.name, abs: abs, rel: rel, type: entry.isDirectory() ? "dir" : "file" };
       })
-      .map((d) => ({
-        name: d.name,
-        path: path.join(dir, d.name),
-        type: d.isDirectory() ? "dir" : "file",
-      }))
-      .sort((a, b) =>
-        a.type !== b.type
-          ? a.type === "dir"
-            ? -1
-            : 1
-          : a.name.localeCompare(b.name),
-      );
-  } catch {
-    return [];
-  }
-}
-
-function getAllItemsRecursive(dir = currentDir, prefix = "") {
-  if (dirCache.has(dir)) {
-    return dirCache.get(dir);
+      .filter(function (entry) { return canShow(entry.rel) && (!q || entry.name.toLowerCase().includes(q)); })
+      .sort(function (a, b) { return a.type !== b.type ? (a.type === "dir" ? -1 : 1) : a.name.localeCompare(b.name); });
   }
 
-  const all = [];
+  function clear() { console.clear(); }
 
-  try {
-    const items = fs.readdirSync(dir, { withFileTypes: true });
-
-    for (const item of items) {
-      if (item.name.startsWith(".") && item.name !== ".gitignore") continue;
-      if (item.name === "node_modules") continue;
-
-      const full = path.join(dir, item.name);
-      const relPath = prefix ? `${prefix}/${item.name}` : item.name;
-
-      if (matchPatterns(item.name, relPath, gitignorePatterns)) continue;
-
-      all.push({
-        name: item.name,
-        path: full,
-        type: item.isDirectory() ? "dir" : "file",
-        relPath,
-      });
-
-      if (item.isDirectory()) {
-        all.push(...getAllItemsRecursive(full, relPath));
-      }
+  function render() {
+    clear();
+    if (mode === "done") {
+      console.log("\n  " + message + "\n\n  Press any key to continue");
+      return;
     }
-  } catch {}
-
-  dirCache.set(dir, all);
-  return all;
-}
-
-function getFilteredItems() {
-  if (!searchQuery) {
-    return listDir(currentDir);
-  }
-
-  const allItems = getAllItemsRecursive(currentDir);
-
-  return allItems
-    .map((item) => ({
-      ...item,
-      score: fuzzyScore(item.relPath, searchQuery),
-    }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score);
-}
-
-function updateScrollOffset() {
-  const viewportHeight = getViewportHeight();
-
-  if (cursor < scrollOffset) {
-    scrollOffset = cursor;
-  } else if (cursor >= scrollOffset + viewportHeight) {
-    scrollOffset = cursor - viewportHeight + 1;
-  }
-}
-
-/* ---------------- DUMP ---------------- */
-
-function collectFilesFromPath(p, out = new Set()) {
-  try {
-    const stat = fs.statSync(p);
-
-    if (stat.isFile()) {
-      out.add(p);
-      return out;
+    if (mode === "restore") {
+      console.log("  Context Pack - Restore\n");
+      console.log("  Enter: restore JSON pack from clipboard");
+      console.log("  Esc: back");
+      if (message) console.log("\n  " + message);
+      return;
     }
 
-    if (stat.isDirectory()) {
-      const items = fs.readdirSync(p, { withFileTypes: true });
+    const visible = items();
+    if (cursor >= visible.length) cursor = Math.max(0, visible.length - 1);
+    console.log("  Context Pack - Smart Selection\n");
+    console.log("  " + (path.relative(ROOT, currentDir) || "."));
+    console.log("  " + selected.size + " selected | " + format + " | budget " + formatTokens(BUDGETS[budgetIndex]));
+    if (query) console.log("  /" + query);
+    console.log("");
 
-      for (const item of items) {
-        const full = path.join(p, item.name);
-
-        if (
-          item.isDirectory() &&
-          !item.name.startsWith(".") &&
-          item.name !== "node_modules"
-        ) {
-          collectFilesFromPath(full, out);
-        } else if (item.isFile()) {
-          out.add(full);
-        }
-      }
+    const height = Math.max(8, (process.stdout.rows || 24) - 10);
+    const start = Math.max(0, Math.min(cursor - Math.floor(height / 2), Math.max(0, visible.length - height)));
+    for (let i = start; i < Math.min(visible.length, start + height); i++) {
+      const item = visible[i];
+      console.log("  " + (i === cursor ? ">" : " ") + " " + (selected.has(item.abs) ? "x" : " ") + " " + item.name + (item.type === "dir" ? "/" : ""));
     }
-  } catch {}
-
-  return out;
-}
-
-function buildProjectTree(dumpFiles) {
-  const rels = new Map();
-
-  for (const full of dumpFiles) {
-    rels.set(path.relative(ROOT, full).split(path.sep).join("/"), "file");
+    console.log("\n  Enter open/select | Space select | Left back | Ctrl+E build | f format | b budget");
+    console.log("  Type to focus/search | r restore | Esc clear/back | q quit");
   }
 
-  const parentDirs = new Set();
-  for (const rel of rels.keys()) {
-    const parts = rel.split("/");
-    for (let i = 1; i < parts.length; i++) {
-      parentDirs.add(parts.slice(0, i).join("/"));
-    }
+  function build() {
+    const pack = buildSmartPack({ root: ROOT, seeds: Array.from(selected), focus: query, budget: BUDGETS[budgetIndex] });
+    const output = renderOutput(pack, format);
+    const copied = writeClipboard(output);
+    message = (copied ? "Copied " : "Built ") + pack.selectedCount + " files, " + formatTokens(pack.totalTokens) + " tokens" + (copied ? " to clipboard." : "; clipboard unavailable.");
+    mode = "done";
   }
 
-  const allNodes = new Set([...rels.keys(), ...parentDirs]);
-
-  const children = new Map();
-  for (const node of allNodes) {
-    const idx = node.lastIndexOf("/");
-    const parent = idx === -1 ? "." : node.slice(0, idx);
-    const name = idx === -1 ? node : node.slice(idx + 1);
-    if (!children.has(parent)) children.set(parent, []);
-    children.get(parent).push({ name, path: node, isDir: !rels.has(node) });
-  }
-
-  for (const list of children.values()) {
-    list.sort((a, b) =>
-      a.isDir !== b.isDir ? (a.isDir ? -1 : 1) : a.name.localeCompare(b.name),
-    );
-  }
-
-  const lines = ["."];
-
-  function walk(nodePath, depth) {
-    const list = children.get(nodePath) || [];
-    for (const child of list) {
-      const indent = "  ".repeat(depth);
-      const branch = list.indexOf(child) === list.length - 1 ? "└── " : "├── ";
-      const suffix = child.isDir ? "/" : "";
-      lines.push(`${indent}${branch}${child.name}${suffix}`);
-      if (child.isDir) walk(child.path, depth + 1);
-    }
-  }
-
-  walk(".", 0);
-  return lines.join("\n");
-}
-
-function buildDump() {
-  const files = new Set();
-  let totalTokens = 0;
-
-  for (const p of selected) {
-    collectFilesFromPath(p, files);
-  }
-
-  const out = {};
-  const fileTokens = {};
-
-  for (const f of files) {
-    try {
-      let content = fs.readFileSync(f, "utf8");
-
-      content = content
-        .replace(/[ \t]+$/gm, "")
-        .replace(/\n{3,}/g, "\n\n")
-        .replace(/\/\/# sourceMappingURL=.*$/gm, "");
-
-      if (!content.trim()) continue;
-
-      const tokens = estimateTokens(content);
-      totalTokens += tokens;
-      fileTokens[f] = tokens;
-
-      out[f] = {
-        content,
-        hash: crypto.createHash("sha1").update(content).digest("hex"),
-        lines: content.split("\n").length,
-        tokens,
-      };
-    } catch {}
-  }
-
-  const tree = buildProjectTree(files);
-  const totalOnDisk = getAllItemsRecursive(currentDir).filter(
-    (i) => i.type === "file",
-  ).length;
-
-  return {
-    files: out,
-    tree,
-    totalTokens,
-    fileTokens,
-    totalOnDisk,
-  };
-}
-
-function buildMarkdownDump(dump) {
-  const count = Object.keys(dump.files).length;
-  const scope =
-    dump.totalOnDisk && dump.totalOnDisk !== count
-      ? ` · ${count} of ${dump.totalOnDisk} files on disk`
-      : "";
-  const files = Object.keys(dump.files);
-
-  let md = `# Context Dump: ${count} file${count === 1 ? "" : "s"}${scope} · ${formatTokens(dump.totalTokens)}\n`;
-  md += `\`\`\`\n${dump.tree}\n\`\`\`\n`;
-
-  for (const filepath of files) {
-    const info = dump.files[filepath];
-    const rel = path.relative(ROOT, filepath);
-    const ext = path.extname(filepath).slice(1) || "txt";
-    md += `\n## ${rel}\n\`\`\`${ext}\n${info.content}\n\`\`\`\n`;
-  }
-
-  return md;
-}
-
-function exportDump() {
-  const dump = buildDump();
-  const keys = Object.keys(dump.files);
-
-  if (!keys.length) {
-    doneMessage = ["No items selected."];
-    mode = MODE.DONE;
-    return;
-  }
-
-  let output;
-  if (outputFormat === "markdown") {
-    output = buildMarkdownDump(dump);
-  } else {
-    output = JSON.stringify(dump, null, 2);
-  }
-
-  const ok = writeClipboard(output);
-  const size = formatBytes(Buffer.byteLength(output, "utf8"));
-  const tokenStr = formatTokens(dump.totalTokens);
-  const warning = getContextWindowWarning(dump.totalTokens);
-
-  doneMessage = ok
-    ? [
-        `Dump copied to clipboard (\x1b[1m${outputFormat}\x1b[0m).`,
-        `${keys.length} files · ${size} · ${tokenStr}`,
-        ...(warning ? [warning] : []),
-      ]
-    : [
-        `Could not write to clipboard.`,
-        `(${keys.length} files, ${size}, ${tokenStr} — is xclip/pbcopy installed?)`,
-      ];
-
-  mode = MODE.DONE;
-}
-
-/* ---------------- RESET ---------------- */
-
-function reset() {
-  mode = MODE.MAIN;
-  mainCursor = 0;
-  cursor = 0;
-  scrollOffset = 0;
-  selected.clear();
-  searchQuery = "";
-  dirCache.clear();
-  dirHistory.length = 0;
-  clipboardData = null;
-  doneMessage = [];
-  formatCursor = 0;
-}
-
-/* ---------------- RENDER ---------------- */
-
-function renderMain() {
-  clear();
-
-  console.log("  \x1b[1mContext Dumper\x1b[0m\n");
-
-  menu.forEach((m, i) => {
-    const pointer = i === mainCursor ? "\x1b[36m❯\x1b[0m" : " ";
-    const label = i === mainCursor ? `\x1b[1m${m.label}\x1b[0m` : m.label;
-    console.log(`${pointer} ${label}`);
-  });
-
-  console.log(`\n  Format: \x1b[36m${outputFormat}\x1b[0m  (press f to change)`);
-
-  console.log("\n  \x1b[2m↑↓ move · Enter select · f format · q/Esc quit\x1b[0m");
-}
-
-function enterDir(dirPath) {
-  dirHistory.push({ dir: currentDir, cursor, scroll: scrollOffset });
-  currentDir = dirPath;
-  cursor = 0;
-  scrollOffset = 0;
-  searchQuery = "";
-}
-
-function goBack() {
-  if (dirHistory.length > 0) {
-    const prev = dirHistory.pop();
-    currentDir = prev.dir;
-    cursor = prev.cursor;
-    scrollOffset = prev.scroll;
-    searchQuery = "";
-    return true;
-  }
-
-  const parent = path.dirname(currentDir);
-
-  if (parent.startsWith(ROOT) && parent !== currentDir) {
-    currentDir = parent;
-    cursor = 0;
-    scrollOffset = 0;
-    searchQuery = "";
-    return true;
-  }
-
-  return false;
-}
-
-function buildBreadcrumb() {
-  const rel = path.relative(ROOT, currentDir);
-
-  if (!rel) return ".";
-
-  const parts = rel.split(path.sep);
-
-  if (parts.length <= 3) return parts.join(" / ");
-
-  return "... / " + parts.slice(-2).join(" / ");
-}
-
-function renderFolder(dump) {
-  clear();
-
-  const items = getFilteredItems();
-
-  if (cursor >= items.length) {
-    cursor = Math.max(0, items.length - 1);
-  }
-
-  updateScrollOffset();
-
-  const dirCount = items.filter((i) => i.type === "dir").length;
-  const fileCount = items.length - dirCount;
-  const breadcrumb = buildBreadcrumb();
-
-  console.log(`  \x1b[1m${breadcrumb}\x1b[0m`);
-  console.log(
-    `  \x1b[2m${dirCount} folders, ${fileCount} files\x1b[0m` +
-      (selected.size ? `  \x1b[32m${selected.size} selected\x1b[0m` : ""),
-  );
-
-  if (searchQuery) {
-    console.log(
-      `\n  \x1b[33m/${searchQuery}\x1b[0m` +
-        (items.length
-          ? ` \x1b[2m(${items.length} match${items.length === 1 ? "" : "es"})\x1b[0m`
-          : ` \x1b[2m(no matches)\x1b[0m`),
-    );
-  }
-
-  console.log("");
-
-  if (items.length === 0) {
-    console.log("  \x1b[2m(empty)\x1b[0m\n");
-  } else {
-    const viewportHeight = getViewportHeight();
-
-    const visibleItems = items.slice(
-      scrollOffset,
-      scrollOffset + viewportHeight,
-    );
-
-    if (scrollOffset > 0) {
-      console.log(`  \x1b[2m▲ ${scrollOffset} more above\x1b[0m`);
-    }
-
-    visibleItems.forEach((i, idx) => {
-      const realIdx = scrollOffset + idx;
-      const active = realIdx === cursor;
-      const isSelected = selected.has(i.path);
-      const isDir = i.type === "dir";
-      const displayName = searchQuery && i.relPath ? i.relPath : i.name;
-      const suffix = isDir ? "/" : "";
-
-      const pointer = active ? "\x1b[36m❯\x1b[0m" : " ";
-      const check = isSelected ? "\x1b[32m✓\x1b[0m" : " ";
-
-      let color;
-      if (isSelected)
-        color = "\x1b[32m"; // green = selected, overrides dir blue
-      else if (isDir)
-        color = "\x1b[1;34m"; // bold blue = folder
-      else color = "";
-
-      let label = `${color}${displayName}${suffix}\x1b[0m`;
-      
-      // Show token count for files
-      if (!isDir && dump && dump.fileTokens && dump.fileTokens[i.path]) {
-        label += ` \x1b[2m(${formatTokens(dump.fileTokens[i.path])})\x1b[0m`;
-      }
-      
-      if (active) label = `\x1b[7m ${label}\x1b[27m`; // reverse video on the active row
-
-      console.log(`${pointer} ${check} ${label}`);
-    });
-
-    const below = items.length - (scrollOffset + viewportHeight);
-
-    if (below > 0) {
-      console.log(`  \x1b[2m▼ ${below} more below\x1b[0m`);
-    }
-  }
-
-  const hints = searchQuery
-    ? "↑↓ move · Enter open/select · Backspace edit · Esc clear search"
-    : "↑↓ move · →/Enter open · ← back · Space select · Ctrl+A all · Ctrl+U clear · Ctrl+E dump · Esc quit";
-
-  console.log(`\n  \x1b[2m${hints}\x1b[0m`);
-}
-
-function renderClipboard() {
-  clear();
-
-  console.log("  \x1b[1mClipboard Import\x1b[0m\n");
-
-  const data = readClipboard();
-
-  if (!data) {
-    console.log("  Clipboard is empty.\n");
-    console.log("  \x1b[2mEsc back · q quit\x1b[0m");
-    return;
-  }
-
-  try {
-    clipboardData = JSON.parse(data);
-  } catch {
-    console.log("  Clipboard is not valid JSON.\n");
-    console.log("  \x1b[2mEsc back · q quit\x1b[0m");
-    return;
-  }
-
-  const files = Object.keys(clipboardData);
-
-  console.log(`  Found \x1b[1m${files.length}\x1b[0m files\n`);
-
-  files.slice(0, 20).forEach((f, i) => {
-    const info = clipboardData[f];
-    const lines = info.lines || "?";
-    console.log(
-      `  \x1b[2m${String(i + 1).padStart(2)}.\x1b[0m ${f} \x1b[2m(${lines} lines)\x1b[0m`,
-    );
-  });
-
-  if (files.length > 20) {
-    console.log(`\n  \x1b[2m... and ${files.length - 20} more\x1b[0m`);
-  }
-
-  console.log("\n  \x1b[2mEnter recreate · Esc back · q quit\x1b[0m");
-}
-
-function recreateFromClipboard() {
-  if (!clipboardData || Object.keys(clipboardData).length === 0) return;
-
-  let count = 0;
-  let errors = 0;
-
-  for (const file in clipboardData) {
-    try {
-      const dir = path.dirname(file);
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(file, clipboardData[file].content, "utf8");
-      count++;
-    } catch {
-      errors++;
-    }
-  }
-
-  doneMessage = [
-    `Recreated ${count} files.`,
-    ...(errors > 0 ? [`${errors} files failed.`] : []),
-  ];
-  mode = MODE.DONE;
-}
-
-function renderDone() {
-  clear();
-  console.log("");
-  doneMessage.forEach((line) => console.log(`  ${line}`));
-  console.log("\n  \x1b[2mPress any key to continue\x1b[0m");
-}
-
-function render() {
-  if (mode === MODE.MAIN) return renderMain();
-  if (mode === MODE.FOLDER) return renderFolder(buildDump());
-  if (mode === MODE.CLIPBOARD) return renderClipboard();
-  if (mode === MODE.DONE) return renderDone();
-}
-
-/* ---------------- INPUT ---------------- */
-
-function start() {
   readline.emitKeypressEvents(process.stdin);
-
-  if (process.stdin.isTTY) {
-    process.stdin.setRawMode(true);
-  }
-
+  if (process.stdin.isTTY) process.stdin.setRawMode(true);
   render();
 
-  process.stdin.on("keypress", (_, key) => {
+  process.stdin.on("keypress", function (_, key) {
     const k = keyName(key);
+    if (key.ctrl && key.name === "c") process.exit(0);
 
-    /* Ctrl+C always exits */
-    if (key.ctrl && key.name === "c") {
-      process.exit(0);
-    }
-
-    /* DONE - any key goes back */
-    if (mode === MODE.DONE) {
-      reset();
+    if (mode === "done") {
+      mode = "browse";
+      message = "";
       render();
       return;
     }
 
-    /* MAIN */
-    if (mode === MODE.MAIN) {
-      if (k === "escape" || k === "q") process.exit(0);
-
-      if (k === "up") mainCursor = Math.max(0, mainCursor - 1);
-      if (k === "down") mainCursor = Math.min(menu.length - 1, mainCursor + 1);
-      
-      if (k === "f") {
-        outputFormat = outputFormat === "json" ? "markdown" : "json";
+    if (mode === "restore") {
+      if (k === "escape") mode = "browse";
+      else if (k === "return") {
+        try {
+          const raw = readClipboard();
+          if (!raw) throw new Error("Clipboard is empty.");
+          const result = restorePack(JSON.parse(raw), ROOT);
+          message = "Restored " + result.restored.length + "; skipped " + result.skipped.length + ".";
+          mode = "done";
+        } catch (error) {
+          message = error.message;
+        }
       }
-
-      if (k === "return") {
-        mode =
-          menu[mainCursor].key === "clipboard" ? MODE.CLIPBOARD : MODE.FOLDER;
-      }
-
       render();
       return;
     }
 
-    /* CLIPBOARD */
-    if (mode === MODE.CLIPBOARD) {
-      if (k === "return") {
-        recreateFromClipboard();
-      } else if (k === "escape" || k === "backspace" || k === "q") {
-        reset();
-      }
-
+    const visible = items();
+    if (k === "q") process.exit(0);
+    if (key.ctrl && k === "e") {
+      build();
       render();
       return;
     }
-
-    /* FOLDER */
-    if (mode === MODE.FOLDER) {
-      const items = getFilteredItems();
-      const isSearching = searchQuery.length > 0;
-
-      /* Ctrl+E - dump. Fires regardless of search text, no ambiguity. */
-      if (key.ctrl && k === "e") {
-        exportDump();
-        render();
-        return;
-      }
-
-      /* Ctrl+A - select all currently visible/filtered items */
-      if (key.ctrl && k === "a") {
-        items.forEach((i) => selected.add(i.path));
-        render();
-        return;
-      }
-
-      /* Ctrl+U - clear selection */
-      if (key.ctrl && k === "u") {
-        selected.clear();
-        render();
-        return;
-      }
-
-      if (k === "escape") {
-        if (isSearching) {
-          searchQuery = "";
-          cursor = 0;
-          scrollOffset = 0;
-        } else {
-          reset();
-        }
-      } else if (k === "up") {
-        cursor = Math.max(0, cursor - 1);
-        updateScrollOffset();
-      } else if (k === "down") {
-        cursor = Math.min(items.length - 1, cursor + 1);
-        updateScrollOffset();
-      } else if (k === "return") {
-        const item = items[cursor];
-
-        if (item) {
-          if (item.type === "dir") {
-            enterDir(item.path);
-          } else {
-            if (selected.has(item.path)) selected.delete(item.path);
-            else selected.add(item.path);
-          }
-        }
-      } else if (k === "space") {
-        const item = items[cursor];
-
-        if (item) {
-          if (selected.has(item.path)) selected.delete(item.path);
-          else selected.add(item.path);
-        }
-      } else if (k === "tab") {
-        const item = items[cursor];
-
-        if (item) {
-          if (selected.has(item.path)) selected.delete(item.path);
-          else selected.add(item.path);
-
-          cursor = Math.min(items.length - 1, cursor + 1);
-          updateScrollOffset();
-        }
-      } else if (k === "right") {
-        const item = items[cursor];
-
-        if (item?.type === "dir") {
-          enterDir(item.path);
-        }
-      } else if (k === "left") {
-        goBack();
-      } else if (k === "backspace") {
-        if (isSearching) {
-          searchQuery = searchQuery.slice(0, -1);
-          cursor = 0;
-          scrollOffset = 0;
-        } else {
-          goBack();
-        }
-      } else if (!key.ctrl && !key.meta && k.length === 1 && k >= " ") {
-        searchQuery += k;
+    if (k === "f") format = format === "markdown" ? "json" : "markdown";
+    else if (k === "b") budgetIndex = (budgetIndex + 1) % BUDGETS.length;
+    else if (k === "r") mode = "restore";
+    else if (k === "up") cursor = Math.max(0, cursor - 1);
+    else if (k === "down") cursor = Math.min(Math.max(0, visible.length - 1), cursor + 1);
+    else if (k === "space") {
+      const item = visible[cursor];
+      if (item) selected.has(item.abs) ? selected.delete(item.abs) : selected.add(item.abs);
+    } else if (k === "return" || k === "right") {
+      const item = visible[cursor];
+      if (item && item.type === "dir") {
+        history.push(currentDir);
+        currentDir = item.abs;
         cursor = 0;
-        scrollOffset = 0;
+        query = "";
+      } else if (item) {
+        selected.has(item.abs) ? selected.delete(item.abs) : selected.add(item.abs);
       }
-
-      render();
+    } else if (k === "left") {
+      if (history.length) currentDir = history.pop();
+      cursor = 0;
+      query = "";
+    } else if (k === "escape") {
+      if (query) query = "";
+      else if (history.length) currentDir = history.pop();
+      else process.exit(0);
+      cursor = 0;
+    } else if (k === "backspace") {
+      if (query) query = query.slice(0, -1);
+      else if (history.length) currentDir = history.pop();
+      cursor = 0;
+    } else if (!key.ctrl && !key.meta && k.length === 1 && k >= " ") {
+      query += k;
+      cursor = 0;
     }
+    render();
   });
 }
 
-start();
+try {
+  const argv = process.argv.slice(2);
+  const options = parseArgs(argv);
+  if (options.help) help();
+  else if (options.version) console.log(VERSION);
+  else if (argv.length) runNonInteractive(options);
+  else startInteractive();
+} catch (error) {
+  console.error("context-pack: " + error.message);
+  process.exitCode = 1;
+}
