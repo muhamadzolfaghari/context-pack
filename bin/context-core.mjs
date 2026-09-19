@@ -303,6 +303,26 @@ export function buildSmartPack(options) {
     .slice(0, 12)
     .map(function (f) { return f.path; });
   const roots = Array.from(new Set(Array.from(seeds.selected).concat(focusRoots, structuralRoots)));
+
+  const testsByStem = new Map();
+  for (const file of scan.files) {
+    const lower = file.path.toLowerCase();
+    if (!/(?:^|\/)(?:test|tests|__tests__)\/|[._-](?:test|spec)\./.test(lower)) continue;
+    const ext = path.posix.extname(file.path);
+    const stem = path.posix.basename(file.path, ext).replace(/[._-](?:test|spec)$/i, "").toLowerCase();
+    if (!testsByStem.has(stem)) testsByStem.set(stem, []);
+    testsByStem.get(stem).push(file.path);
+  }
+  for (const rel of roots) {
+    const ext = path.posix.extname(rel);
+    const stem = path.posix.basename(rel, ext).toLowerCase();
+    for (const related of testsByStem.get(stem) || []) {
+      if (related === rel) continue;
+      scores.set(related, (scores.get(related) || 0) + 1800);
+      addReason(related, "related-test:" + rel);
+    }
+  }
+
   const queue = roots.map(function (rel) { return { rel: rel, depth: 0 }; });
   const seen = new Map();
   const maxDepth = options.dependencyDepth === undefined ? 4 : Math.max(0, options.dependencyDepth);
