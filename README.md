@@ -17,6 +17,7 @@ A raw repository dump is usually too large and noisy. `context-pack` produces a 
 
 - selected files and directories get high priority
 - local imports are followed recursively
+- matching `*.test.*` / `*.spec.*` files are pulled in as related evidence
 - project manifests, entrypoints, config, and README files receive structural priority
 - `--focus` terms increase path/content relevance
 - generated, secret, binary, symlinked, and oversized files are filtered
