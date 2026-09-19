@@ -92,6 +92,19 @@ test("focused files become dependency roots and unrelated src files stay out", f
   assert.equal(Boolean(pack.files["src/unrelated.js"]), false);
 });
 
+test("focused source pulls matching test evidence", function () {
+  const root = fixture({
+    "src/checkout.js": "export function checkout(){ return 'payment retry'; }\n",
+    "test/checkout.test.js": "import { checkout } from '../src/checkout.js';\ncheckout();\n",
+    "test/avatar.test.js": "export const avatar = true;\n"
+  });
+  const pack = buildSmartPack({ root: root, focus: "payment retry checkout", budget: 5000 });
+  assert.ok(pack.files["src/checkout.js"]);
+  assert.ok(pack.files["test/checkout.test.js"]);
+  assert.ok(pack.files["test/checkout.test.js"].reasons.some(function (x) { return x.startsWith("related-test:"); }));
+  assert.equal(Boolean(pack.files["test/avatar.test.js"]), false);
+});
+
 test("exact selected file can exceed budget", function () {
   const root = fixture({ "big.js": "export const x = 1;\n".repeat(300) });
   const pack = buildSmartPack({ root: root, seeds: ["big.js"], budget: 10 });
