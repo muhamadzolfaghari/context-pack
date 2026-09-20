@@ -218,6 +218,9 @@ function keyName(key) {
 function startInteractive() {
   const scan = scanProject(ROOT);
   const fileSet = new Set(scan.files.map(function (x) { return x.path; }));
+  const fileByPath = new Map(scan.files.map(function (x) { return [x.path, x]; }));
+  const targetChoices = ["chatgpt", "claude", "deepseek", "chatbox", null];
+
   let currentDir = ROOT;
   let history = [];
   let cursor = 0;
@@ -225,8 +228,10 @@ function startInteractive() {
   let query = "";
   let format = "markdown";
   let budgetIndex = 1;
-  let targetIndex = 0;
-  let mode = "browse";
+  let targetCursor = 0;
+  let budgetCursor = budgetIndex;
+  let activeTarget = null;
+  let mode = "target";
   let message = "";
 
   function canShow(rel) {
@@ -251,10 +256,73 @@ function startInteractive() {
       .sort(function (a, b) { return a.type !== b.type ? (a.type === "dir" ? -1 : 1) : a.name.localeCompare(b.name); });
   }
 
+  function currentBudget() {
+    return activeTarget ? TARGET_PROFILES[activeTarget].safeBudget : BUDGETS[budgetIndex];
+  }
+
+  function selectedSeedEstimate() {
+    const included = new Set();
+    for (const abs of selected) {
+      const rel = path.relative(ROOT, abs).split(path.sep).join("/");
+      if (fileByPath.has(rel)) {
+        included.add(rel);
+        continue;
+      }
+      const prefix = rel ? rel + "/" : "";
+      for (const file of scan.files) {
+        if (!prefix || file.path.startsWith(prefix)) included.add(file.path);
+      }
+    }
+    let tokens = 0;
+    for (const rel of included) {
+      const file = fileByPath.get(rel);
+      if (file) tokens += Math.max(1, Math.ceil(file.bytes / 3.6));
+    }
+    return tokens;
+  }
+
   function clear() { console.clear(); }
+
+  function renderTargetSelector() {
+    console.log("  Context Pack\n");
+    console.log("  Choose target context\n");
+    targetChoices.forEach(function (id, index) {
+      const active = index === targetCursor;
+      const pointer = active ? "❯" : " ";
+      if (id === null) {
+        console.log("  " + pointer + " Custom budget       " + formatTokens(BUDGETS[budgetIndex]));
+        return;
+      }
+      const profile = TARGET_PROFILES[id];
+      const context = profile.contextWindow ? " / " + formatTokens(profile.contextWindow) + " context" : "";
+      console.log(
+        "  " + pointer + " " + id.padEnd(13) +
+        formatTokens(profile.safeBudget).padStart(6) + " safe" +
+        context + "  · " + profile.modelFamily
+      );
+    });
+    console.log("\n  ↑↓ choose · Enter continue · q quit");
+  }
+
+  function renderBudgetSelector() {
+    console.log("  Context Pack - Custom Budget\n");
+    BUDGETS.forEach(function (budget, index) {
+      console.log("  " + (index === budgetCursor ? "❯" : " ") + " " + formatTokens(budget));
+    });
+    console.log("\n  ↑↓ choose · Enter continue · Esc targets");
+  }
 
   function render() {
     clear();
+
+    if (mode === "target") {
+      renderTargetSelector();
+      return;
+    }
+    if (mode === "budget") {
+      renderBudgetSelector();
+      return;
+    }
     if (mode === "done") {
       console.log("\n  " + message + "\n\n  Press any key to continue");
       return;
@@ -269,30 +337,32 @@ function startInteractive() {
 
     const visible = items();
     if (cursor >= visible.length) cursor = Math.max(0, visible.length - 1);
+
+    const budget = currentBudget();
+    const estimate = selectedSeedEstimate();
+    const targetLabel = activeTarget || "custom";
+
     console.log("  Context Pack - Smart Selection\n");
-    console.log("  " + (path.relative(ROOT, currentDir) || "."));
-    const activeTarget = TARGET_ORDER[targetIndex];
-    const activeBudget = activeTarget ? TARGET_PROFILES[activeTarget].safeBudget : BUDGETS[budgetIndex];
     console.log(
-      "  " + selected.size + " selected | " + format +
-      " | " + (activeTarget ? "target " + activeTarget : "custom budget") +
-      " | budget " + formatTokens(activeBudget)
+      "  Target: " + targetLabel +
+      " · Budget: " + formatTokens(budget) +
+      " · Seed est: " + formatTokens(estimate) + "/" + formatTokens(budget)
     );
-    if (query) console.log("  /" + query);
+    console.log("  " + selected.size + " selected · " + format + " · " + (path.relative(ROOT, currentDir) || "."));
+    if (query) console.log("  Focus: " + query);
     console.log("");
 
-    const height = Math.max(8, (process.stdout.rows || 24) - 10);
+    const height = Math.max(8, (process.stdout.rows || 24) - 11);
     const start = Math.max(0, Math.min(cursor - Math.floor(height / 2), Math.max(0, visible.length - height)));
     for (let i = start; i < Math.min(visible.length, start + height); i++) {
       const item = visible[i];
       console.log("  " + (i === cursor ? ">" : " ") + " " + (selected.has(item.abs) ? "x" : " ") + " " + item.name + (item.type === "dir" ? "/" : ""));
     }
-    console.log("\n  Enter open/select | Space select | Left back | Ctrl+E build | f format | t target | b budget");
-    console.log("  Type to focus/search | r restore | Esc clear/back | q quit");
+    console.log("\n  Enter open/select · Space select · Left back · Ctrl+E build · f format");
+    console.log("  t target · b budget · Type focus/search · r restore · Esc clear/back · q quit");
   }
 
   function build() {
-    const activeTarget = TARGET_ORDER[targetIndex];
     const pack = buildSmartPack({
       root: ROOT,
       seeds: Array.from(selected),
@@ -302,7 +372,12 @@ function startInteractive() {
     });
     const output = renderOutput(pack, format);
     const copied = writeClipboard(output);
-    message = (copied ? "Copied " : "Built ") + pack.selectedCount + " files, " + formatTokens(pack.totalTokens) + " tokens" + (copied ? " to clipboard." : "; clipboard unavailable.");
+    message =
+      (copied ? "Copied " : "Built ") +
+      pack.selectedCount + " files · " +
+      formatTokens(pack.totalTokens) + "/" + formatTokens(pack.budget) + " tokens · target " +
+      (pack.target ? pack.target.id : "custom") +
+      (copied ? " · clipboard." : " · clipboard unavailable.");
     mode = "done";
   }
 
@@ -313,6 +388,38 @@ function startInteractive() {
   process.stdin.on("keypress", function (_, key) {
     const k = keyName(key);
     if (key.ctrl && key.name === "c") process.exit(0);
+
+    if (mode === "target") {
+      if (k === "q" || k === "escape") process.exit(0);
+      if (k === "up") targetCursor = Math.max(0, targetCursor - 1);
+      else if (k === "down") targetCursor = Math.min(targetChoices.length - 1, targetCursor + 1);
+      else if (k === "return" || k === "right") {
+        const choice = targetChoices[targetCursor];
+        if (choice === null) {
+          activeTarget = null;
+          budgetCursor = budgetIndex;
+          mode = "budget";
+        } else {
+          activeTarget = choice;
+          mode = "browse";
+        }
+      }
+      render();
+      return;
+    }
+
+    if (mode === "budget") {
+      if (k === "escape" || k === "left") mode = "target";
+      else if (k === "up") budgetCursor = Math.max(0, budgetCursor - 1);
+      else if (k === "down") budgetCursor = Math.min(BUDGETS.length - 1, budgetCursor + 1);
+      else if (k === "return" || k === "right") {
+        budgetIndex = budgetCursor;
+        activeTarget = null;
+        mode = "browse";
+      }
+      render();
+      return;
+    }
 
     if (mode === "done") {
       mode = "browse";
@@ -345,13 +452,16 @@ function startInteractive() {
       render();
       return;
     }
+
     if (k === "f") format = format === "markdown" ? "json" : "markdown";
-    else if (k === "t") targetIndex = (targetIndex + 1) % TARGET_ORDER.length;
-    else if (k === "b") {
-      targetIndex = 0;
-      budgetIndex = (budgetIndex + 1) % BUDGETS.length;
-    }
-    else if (k === "r") mode = "restore";
+    else if (k === "t") {
+      targetCursor = activeTarget ? targetChoices.indexOf(activeTarget) : targetChoices.length - 1;
+      mode = "target";
+    } else if (k === "b") {
+      activeTarget = null;
+      budgetCursor = budgetIndex;
+      mode = "budget";
+    } else if (k === "r") mode = "restore";
     else if (k === "up") cursor = Math.max(0, cursor - 1);
     else if (k === "down") cursor = Math.min(Math.max(0, visible.length - 1), cursor + 1);
     else if (k === "space") {
@@ -374,7 +484,7 @@ function startInteractive() {
     } else if (k === "escape") {
       if (query) query = "";
       else if (history.length) currentDir = history.pop();
-      else process.exit(0);
+      else mode = "target";
       cursor = 0;
     } else if (k === "backspace") {
       if (query) query = query.slice(0, -1);
