@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0
+
+- Added provider-aware safe context budgets for ChatGPT, Claude, DeepSeek, and generic chatboxes.
+- Added `--target` and `--list-targets` CLI commands with explicit `--budget` override behavior.
+- Added target metadata to Markdown and JSON packs so budget decisions are explainable.
+- Added provider target switching to interactive mode.
+- Preserved conservative headroom for responses, reasoning, system/tool instructions, and conversation history.
+
+
 ## 1.1.0
 
 - Added Git-aware context prioritization for working-tree and branch changes.
