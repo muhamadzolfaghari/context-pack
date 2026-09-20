@@ -167,3 +167,18 @@ test("reverse dependency impact pulls direct consumers", function () {
   assert.ok(pack.files["src/consumer.js"].reasons.includes("impacted-by:src/core.js"));
   assert.equal(Boolean(pack.files["src/unrelated.js"]), false);
 });
+
+
+test("scanner excludes credential files and private key material", function () {
+  const root = fixture({
+    "src/a.js": "export const a = 1;\n",
+    ".npmrc": "//registry.npmjs.org/:_authToken=secret\n",
+    ".ssh/id_rsa": "-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n",
+    "config.txt": "AWS_SECRET_ACCESS_KEY=very-secret-value\n"
+  });
+  const scan = scanProject(root);
+  assert.deepEqual(scan.files.map(function (x) { return x.path; }), ["src/a.js"]);
+  assert.ok(scan.skipped.some(function (x) {
+    return x.path === "config.txt" && x.reason === "sensitive-content";
+  }));
+});
