@@ -133,3 +133,37 @@ test("restore preserves existing files by default", function () {
   assert.equal(result.restored.length, 0);
   assert.equal(fs.readFileSync(path.join(root, "a.txt"), "utf8"), "old");
 });
+
+
+test("changed files are prioritized as repository signals", function () {
+  const root = fixture({
+    "src/changed.js": "export const changed = true;\n",
+    "src/noise.js": "export const noise = true;\n"
+  });
+  const pack = buildSmartPack({
+    root: root,
+    changedFiles: ["src/changed.js"],
+    budget: 5000
+  });
+  assert.ok(pack.files["src/changed.js"]);
+  assert.ok(pack.files["src/changed.js"].reasons.includes("changed-file"));
+  assert.equal(pack.changedCount, 1);
+});
+
+test("reverse dependency impact pulls direct consumers", function () {
+  const root = fixture({
+    "src/core.js": "export const value = 42;\n",
+    "src/consumer.js": "import { value } from './core.js';\nexport const result = value;\n",
+    "src/unrelated.js": "export const unrelated = true;\n"
+  });
+  const pack = buildSmartPack({
+    root: root,
+    changedFiles: ["src/core.js"],
+    reverseDependencyDepth: 1,
+    budget: 5000
+  });
+  assert.ok(pack.files["src/core.js"]);
+  assert.ok(pack.files["src/consumer.js"]);
+  assert.ok(pack.files["src/consumer.js"].reasons.includes("impacted-by:src/core.js"));
+  assert.equal(Boolean(pack.files["src/unrelated.js"]), false);
+});
