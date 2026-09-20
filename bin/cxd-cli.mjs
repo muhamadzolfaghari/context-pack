@@ -34,6 +34,9 @@ function help() {
     "  --stdout                 Print output to stdout",
     "  --copy                   Copy output to the clipboard",
     "  --depth <n>              Local dependency expansion depth (default: 4)",
+    "  --impact-depth <n>       Reverse-dependency impact depth (default: 1)",
+    "  --changed                Prioritize staged, unstaged, and untracked files",
+    "  --since <git-ref>        Prioritize files changed since a git ref",
     "  --max-file-bytes <n>     Skip larger files (default: 1000000)",
     "  --ignore <pattern>       Add ignore pattern; repeatable",
     "  --restore <file.json>    Safely restore a JSON pack",
@@ -45,6 +48,8 @@ function help() {
     "  context-pack src/auth --focus \"refresh token flow\" --budget 32k --stdout",
     "  context-pack src api --focus \"checkout request lifecycle\" -o context.md",
     "  context-pack --focus \"application architecture\" --budget 128k --copy",
+    "  context-pack --changed --focus \"review current work\" --budget 32k --stdout",
+    "  context-pack --since origin/main --focus \"impact of this branch\" -o context.md",
     "  context-pack --restore context.json"
   ].join("\n"));
 }
@@ -52,8 +57,9 @@ function help() {
 function parseArgs(argv) {
   const options = {
     seeds: [], ignore: [], format: "markdown", budget: DEFAULT_BUDGET,
-    dependencyDepth: 4, maxFileBytes: 1000000, focus: "",
-    stdout: false, copy: false, output: null, restore: null, overwrite: false
+    dependencyDepth: 4, reverseDependencyDepth: 1, maxFileBytes: 1000000, focus: "",
+    stdout: false, copy: false, output: null, restore: null, overwrite: false,
+    changed: false, since: null
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -76,6 +82,9 @@ function parseArgs(argv) {
     else if (arg === "--stdout") options.stdout = true;
     else if (arg === "--copy") options.copy = true;
     else if (arg === "--depth") options.dependencyDepth = Math.max(0, Number.parseInt(next(), 10));
+    else if (arg === "--impact-depth") options.reverseDependencyDepth = Math.max(0, Number.parseInt(next(), 10));
+    else if (arg === "--changed") options.changed = true;
+    else if (arg === "--since") options.since = next();
     else if (arg === "--max-file-bytes") options.maxFileBytes = Math.max(1, Number.parseInt(next(), 10));
     else if (arg === "--ignore") options.ignore.push(next());
     else if (arg === "--restore") options.restore = next();
@@ -84,6 +93,34 @@ function parseArgs(argv) {
     else options.seeds.push(arg);
   }
   return options;
+}
+
+function gitLines(args) {
+  try {
+    return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+      .split(/\r?\n/)
+      .map(function (line) { return line.trim(); })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function collectChangedFiles(options) {
+  const files = new Set();
+
+  if (options.since) {
+    for (const file of gitLines(["diff", "--name-only", "--diff-filter=ACMR", options.since + "...HEAD", "--"])) {
+      files.add(file);
+    }
+  }
+
+  if (options.changed) {
+    for (const file of gitLines(["diff", "--name-only", "--diff-filter=ACMR", "HEAD", "--"])) files.add(file);
+    for (const file of gitLines(["ls-files", "--others", "--exclude-standard"])) files.add(file);
+  }
+
+  return Array.from(files);
 }
 
 function readClipboard() {
@@ -125,6 +162,8 @@ function runNonInteractive(options) {
     focus: options.focus,
     budget: options.budget,
     dependencyDepth: options.dependencyDepth,
+    reverseDependencyDepth: options.reverseDependencyDepth,
+    changedFiles: collectChangedFiles(options),
     maxFileBytes: options.maxFileBytes,
     ignore: options.ignore
   });
