@@ -42,6 +42,29 @@ context-pack --help
 cxd --help
 ```
 
+## Target-aware budgets
+
+Use a target preset when the pack will be pasted into a specific chat/model family:
+
+```bash
+context-pack --target chatgpt --focus "architecture review" --copy
+context-pack --target claude --changed --focus "review current branch" --stdout
+context-pack --target deepseek src --focus "debug request flow" -o context.md
+context-pack --target chatbox --focus "generic chat context" --stdout
+context-pack --list-targets
+```
+
+| Target | Safe pack budget | Reference context window | Reserved headroom |
+| --- | ---: | ---: | ---: |
+| `chatgpt` | 800k | 1.05M | 250k |
+| `claude` | 750k | 1M | 250k |
+| `deepseek` | 550k | 1M | 450k |
+| `chatbox` | 32k | unknown | conservative fallback |
+
+These **safe pack budgets are Context Pack policy**, not provider-published input limits. They intentionally leave room for the answer, reasoning, system/tool instructions, and existing conversation history. `--budget` always overrides the preset.
+
+The reference windows are based on current official API documentation. Consumer chat products can manage context differently, so a target preset should be treated as a safe starting point rather than a guarantee for every session.
+
 ## Smart CLI
 
 ```bash
@@ -55,7 +78,7 @@ context-pack --since origin/main --focus "impact of this branch" --budget 64k -o
 
 ## Interactive mode
 
-Run `context-pack` without arguments. The terminal UI supports selection, search/focus text, token-budget switching, Markdown/JSON switching, clipboard export, and safe JSON restore.
+Run `context-pack` without arguments. The terminal UI supports selection, search/focus text, provider-target switching, manual token-budget switching, Markdown/JSON switching, clipboard export, and safe JSON restore.
 
 | Key | Action |
 | --- | --- |
@@ -65,7 +88,8 @@ Run `context-pack` without arguments. The terminal UI supports selection, search
 | ← | Back |
 | Ctrl+E | Build the smart context pack |
 | `f` | Toggle Markdown / JSON |
-| `b` | Cycle 8k / 32k / 128k / 1M budgets |
+| `t` | Cycle custom / ChatGPT / Claude / DeepSeek / generic chatbox targets |
+| `b` | Switch to manual budget and cycle 8k / 32k / 128k / 1M |
 | `r` | Restore a JSON pack |
 | Esc | Clear / back |
 | q / Ctrl+C | Quit |
