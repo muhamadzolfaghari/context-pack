@@ -291,6 +291,12 @@ export function buildSmartPack(options) {
     addReason(rel, seeds.exact.has(rel) ? "selected-file" : "selected-directory");
   }
 
+  const changed = seedInfo(root, options.changedFiles || [], scan.files);
+  for (const rel of changed.selected) {
+    scores.set(rel, (scores.get(rel) || 0) + 9000);
+    addReason(rel, "changed-file");
+  }
+
   const focusRoots = terms.length
     ? scan.files
         .filter(function (f) { return reasons.get(f.path)?.has("focus-match"); })
@@ -302,7 +308,9 @@ export function buildSmartPack(options) {
     .filter(function (f) { return structuralScore(f.path) >= 1500; })
     .slice(0, 12)
     .map(function (f) { return f.path; });
-  const roots = Array.from(new Set(Array.from(seeds.selected).concat(focusRoots, structuralRoots)));
+  const roots = Array.from(new Set(
+    Array.from(seeds.selected).concat(Array.from(changed.selected), focusRoots, structuralRoots)
+  ));
 
   const testsByStem = new Map();
   for (const file of scan.files) {
@@ -320,6 +328,40 @@ export function buildSmartPack(options) {
       if (related === rel) continue;
       scores.set(related, (scores.get(related) || 0) + 1800);
       addReason(related, "related-test:" + rel);
+    }
+  }
+
+  const reverseDepth = options.reverseDependencyDepth === undefined
+    ? 1
+    : Math.max(0, options.reverseDependencyDepth);
+  if (reverseDepth > 0 && roots.length) {
+    const reverse = new Map();
+    for (const file of scan.files) {
+      if (!CODE_EXTS.includes(path.posix.extname(file.path).toLowerCase())) continue;
+      let sample = "";
+      try { sample = readSample(file.abs); } catch { continue; }
+      for (const spec of extractLocalImports(sample)) {
+        const dep = resolveLocalImport(spec, file.path, index);
+        if (!dep) continue;
+        if (!reverse.has(dep)) reverse.set(dep, new Set());
+        reverse.get(dep).add(file.path);
+      }
+    }
+
+    const impactQueue = roots.map(function (rel) { return { rel: rel, depth: 0, origin: rel }; });
+    const impactSeen = new Map();
+    while (impactQueue.length) {
+      const item = impactQueue.shift();
+      const key = item.origin + "\n" + item.rel;
+      if (impactSeen.has(key) && impactSeen.get(key) <= item.depth) continue;
+      impactSeen.set(key, item.depth);
+      if (item.depth >= reverseDepth) continue;
+      for (const dependent of reverse.get(item.rel) || []) {
+        const boost = Math.max(900, 2800 - item.depth * 700);
+        scores.set(dependent, (scores.get(dependent) || 0) + boost);
+        addReason(dependent, "impacted-by:" + item.origin);
+        impactQueue.push({ rel: dependent, depth: item.depth + 1, origin: item.origin });
+      }
     }
   }
 
@@ -400,6 +442,7 @@ export function buildSmartPack(options) {
     strategy: "smart-v1",
     project: path.basename(root),
     focus: focus || null,
+    changedCount: changed.selected.size,
     budget: budget,
     totalTokens: totalTokens,
     budgetExceeded: totalTokens > budget,
