@@ -5,6 +5,70 @@ import crypto from "node:crypto";
 export const DEFAULT_BUDGET = 32000;
 export const DEFAULT_MAX_FILE_BYTES = 1000000;
 
+export const TARGET_PROFILES = Object.freeze({
+  chatgpt: Object.freeze({
+    id: "chatgpt",
+    provider: "OpenAI",
+    modelFamily: "GPT-5.6",
+    contextWindow: 1050000,
+    maxOutput: 128000,
+    reservedHeadroom: 250000,
+    safeBudget: 800000,
+    aliases: ["openai", "gpt"]
+  }),
+  claude: Object.freeze({
+    id: "claude",
+    provider: "Anthropic",
+    modelFamily: "Claude 5 / Claude 4.6+ long-context",
+    contextWindow: 1000000,
+    maxOutput: 128000,
+    reservedHeadroom: 250000,
+    safeBudget: 750000,
+    aliases: ["anthropic"]
+  }),
+  deepseek: Object.freeze({
+    id: "deepseek",
+    provider: "DeepSeek",
+    modelFamily: "DeepSeek V4",
+    contextWindow: 1000000,
+    maxOutput: 384000,
+    reservedHeadroom: 450000,
+    safeBudget: 550000,
+    aliases: ["deepseek-chat", "deepseek-reasoner"]
+  }),
+  chatbox: Object.freeze({
+    id: "chatbox",
+    provider: "Generic",
+    modelFamily: "Unknown chat UI",
+    contextWindow: null,
+    maxOutput: null,
+    reservedHeadroom: null,
+    safeBudget: DEFAULT_BUDGET,
+    aliases: ["generic"]
+  })
+});
+
+export function resolveTargetProfile(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const wanted = String(value).trim().toLowerCase();
+  for (const profile of Object.values(TARGET_PROFILES)) {
+    if (profile.id === wanted || profile.aliases.includes(wanted)) return profile;
+  }
+  throw new Error(
+    "Unknown target: " + value + ". Supported targets: " +
+    Object.keys(TARGET_PROFILES).join(", ")
+  );
+}
+
+export function resolveContextBudget(target, explicitBudget) {
+  const profile = resolveTargetProfile(target);
+  if (explicitBudget !== undefined && explicitBudget !== null && explicitBudget !== "") {
+    return { budget: parseBudget(explicitBudget), profile: profile, source: "explicit" };
+  }
+  if (profile) return { budget: profile.safeBudget, profile: profile, source: "target-preset" };
+  return { budget: DEFAULT_BUDGET, profile: null, source: "default" };
+}
+
 const DEFAULT_IGNORES = [
   "node_modules", ".git", "dist", "build", "coverage", ".next", ".nuxt",
   ".turbo", ".cache", ".vercel", ".netlify", ".env", ".env.*", "*.lock",
@@ -270,7 +334,8 @@ function projectTree(paths) {
 export function buildSmartPack(options) {
   options = options || {};
   const root = path.resolve(options.root || process.cwd());
-  const budget = parseBudget(options.budget);
+  const budgetInfo = resolveContextBudget(options.target, options.budget);
+  const budget = budgetInfo.budget;
   const focus = String(options.focus || "");
   const terms = focusTerms(focus);
   const scan = scanProject(root, options);
@@ -461,6 +526,16 @@ export function buildSmartPack(options) {
     strategy: "smart-v1",
     project: path.basename(root),
     focus: focus || null,
+    target: budgetInfo.profile ? {
+      id: budgetInfo.profile.id,
+      provider: budgetInfo.profile.provider,
+      modelFamily: budgetInfo.profile.modelFamily,
+      contextWindow: budgetInfo.profile.contextWindow,
+      maxOutput: budgetInfo.profile.maxOutput,
+      reservedHeadroom: budgetInfo.profile.reservedHeadroom,
+      safeBudget: budgetInfo.profile.safeBudget
+    } : null,
+    budgetSource: budgetInfo.source,
     changedCount: changed.selected.size,
     budget: budget,
     totalTokens: totalTokens,
@@ -481,10 +556,17 @@ export function renderMarkdown(pack) {
     "# Context Pack: " + pack.project,
     "",
     "- Strategy: " + pack.strategy,
-    "- Token budget: " + pack.budget,
+    "- Token budget: " + pack.budget + " (" + pack.budgetSource + ")",
     "- Selected: " + pack.selectedCount + "/" + pack.candidateCount + " files",
     "- Estimated tokens: " + pack.totalTokens + (pack.budgetExceeded ? " (budget exceeded by required files)" : "")
   ];
+  if (pack.target) {
+    lines.push(
+      "- Target: " + pack.target.id + " / " + pack.target.modelFamily +
+      " (safe pack " + pack.target.safeBudget +
+      (pack.target.contextWindow ? " of " + pack.target.contextWindow + " context" : "") + ")"
+    );
+  }
   if (pack.focus) lines.push("- Focus: " + pack.focus);
   lines.push("", "## Selected files", "", "| File | Tokens | Why |", "| --- | ---: | --- |");
   for (const [name, info] of Object.entries(pack.files)) {
