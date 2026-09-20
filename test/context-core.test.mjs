@@ -137,6 +137,15 @@ test("restore preserves existing files by default", function () {
   assert.equal(fs.readFileSync(path.join(root, "a.txt"), "utf8"), "old");
 });
 
+test("restore extracts and restores files from markdown string", function () {
+  const root = fixture({});
+  const markdown = "# Context Pack\n\n## src/hello.js\n```javascript\nconsole.log('hello world');\n```\n\n## config/settings.json\n```json\n{\"enabled\":true}\n```\n";
+  const result = restorePack(markdown, root);
+  assert.equal(result.restored.length, 2);
+  assert.equal(fs.readFileSync(path.join(root, "src/hello.js"), "utf8"), "console.log('hello world');\n");
+  assert.equal(fs.readFileSync(path.join(root, "config/settings.json"), "utf8"), "{\"enabled\":true}\n");
+});
+
 
 test("changed files are prioritized as repository signals", function () {
   const root = fixture({
