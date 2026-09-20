@@ -17,6 +17,8 @@ A raw repository dump is usually too large and noisy. `context-pack` produces a 
 
 - selected files and directories get high priority
 - local imports are followed recursively
+- reverse dependency impact is traced so consumers of changed/selected code can be included
+- staged, unstaged, untracked, or branch-diff files can be prioritized with Git-aware signals
 - matching `*.test.*` / `*.spec.*` files are pulled in as related evidence
 - project manifests, entrypoints, config, and README files receive structural priority
 - `--focus` terms increase path/content relevance
@@ -47,6 +49,8 @@ context-pack src/auth --focus "refresh token flow" --budget 32k --stdout
 context-pack --focus "application architecture data flow" --budget 128k -o architecture-context.md
 context-pack src/checkout src/api --focus "checkout request lifecycle" --budget 64k --copy
 context-pack src --focus "routing" --format json -o context.json
+context-pack --changed --focus "review current work" --budget 32k --stdout
+context-pack --since origin/main --focus "impact of this branch" --budget 64k -o branch-context.md
 ```
 
 ## Interactive mode
@@ -68,7 +72,18 @@ Run `context-pack` without arguments. The terminal UI supports selection, search
 
 ## Selection model
 
-`smart-v1` combines explicit intent, dependency proximity, structural importance, and lexical relevance. Large repositories are scanned using metadata and bounded samples first; full file reads are deferred until a candidate is likely to fit the budget.
+`smart-v1` combines explicit intent, dependency proximity, reverse-dependency impact, structural importance, Git-change signals, related tests, and lexical relevance. Large repositories are scanned using metadata and bounded samples first; full file reads are deferred until a candidate is likely to fit the budget.
+
+### Git-aware context
+
+Use `--changed` for the files currently modified in the working tree, including untracked files. Use `--since <ref>` to prioritize files changed on the current branch relative to a Git ref.
+
+```bash
+context-pack --changed --focus "debug checkout regression" --budget 32k --stdout
+context-pack --since origin/main --focus "review branch architecture impact" --impact-depth 2 -o review-context.md
+```
+
+By default, reverse-dependency expansion uses one impact level. Increase it with `--impact-depth <n>` when you need a wider blast-radius view, or set it to `0` to disable reverse impact expansion.
 
 ## Output contract
 
