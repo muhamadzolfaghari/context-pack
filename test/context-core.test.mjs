@@ -4,11 +4,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  TARGET_PROFILES,
   buildSmartPack,
   createIgnoreMatcher,
   extractLocalImports,
   parseBudget,
   renderMarkdown,
+  resolveContextBudget,
+  resolveTargetProfile,
   resolveLocalImport,
   restorePack,
   scanProject
@@ -181,4 +184,38 @@ test("scanner excludes credential files and private key material", function () {
   assert.ok(scan.skipped.some(function (x) {
     return x.path === "config.txt" && x.reason === "sensitive-content";
   }));
+});
+
+
+test("target profiles resolve provider aliases and safe budgets", function () {
+  assert.equal(resolveTargetProfile("openai").id, "chatgpt");
+  assert.equal(resolveTargetProfile("anthropic").id, "claude");
+  assert.equal(resolveTargetProfile("deepseek-chat").id, "deepseek");
+  assert.equal(TARGET_PROFILES.chatbox.safeBudget, 32000);
+  assert.throws(function () { resolveTargetProfile("unknown-provider"); }, /Unknown target/);
+});
+
+test("target budget applies unless explicit budget overrides it", function () {
+  const target = resolveContextBudget("chatgpt", null);
+  assert.equal(target.budget, 800000);
+  assert.equal(target.source, "target-preset");
+
+  const override = resolveContextBudget("chatgpt", "64k");
+  assert.equal(override.budget, 64000);
+  assert.equal(override.source, "explicit");
+});
+
+test("smart pack records target metadata", function () {
+  const root = fixture({
+    "src/main.js": "export const main = true;\n"
+  });
+  const pack = buildSmartPack({
+    root: root,
+    seeds: ["src/main.js"],
+    target: "claude"
+  });
+  assert.equal(pack.target.id, "claude");
+  assert.equal(pack.budget, 750000);
+  assert.equal(pack.budgetSource, "target-preset");
+  assert.equal(pack.target.contextWindow, 1000000);
 });
