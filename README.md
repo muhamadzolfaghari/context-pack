@@ -78,7 +78,7 @@ context-pack --since origin/main --focus "impact of this branch" --budget 64k -o
 
 ## Interactive mode
 
-Run `context-pack` without arguments. The terminal UI supports selection, search/focus text, provider-target switching, manual token-budget switching, Markdown/JSON switching, clipboard export, and safe JSON restore.
+Run `context-pack` without arguments. The terminal UI now opens with a target selector first, then continues into file selection. It supports search/focus text, provider-target switching, manual token-budget selection, Markdown/JSON switching, clipboard export, and safe JSON restore.
 
 | Key | Action |
 | --- | --- |
@@ -88,8 +88,8 @@ Run `context-pack` without arguments. The terminal UI supports selection, search
 | ← | Back |
 | Ctrl+E | Build the smart context pack |
 | `f` | Toggle Markdown / JSON |
-| `t` | Cycle custom / ChatGPT / Claude / DeepSeek / generic chatbox targets |
-| `b` | Switch to manual budget and cycle 8k / 32k / 128k / 1M |
+| `t` | Reopen the target selector |
+| `b` | Open the custom budget selector |
 | `r` | Restore a JSON pack |
 | Esc | Clear / back |
 | q / Ctrl+C | Quit |
