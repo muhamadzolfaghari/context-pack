@@ -215,10 +215,13 @@ export function scanProject(root, options) {
       let sample = Buffer.alloc(0);
       try {
         const fd = fs.openSync(abs, "r");
-        const size = Math.min(stat.size, 4096);
-        sample = Buffer.alloc(size);
-        if (size) fs.readSync(fd, sample, 0, size, 0);
-        fs.closeSync(fd);
+        try {
+          const size = Math.min(stat.size, 4096);
+          sample = Buffer.alloc(size);
+          if (size) fs.readSync(fd, sample, 0, size, 0);
+        } finally {
+          fs.closeSync(fd);
+        }
       } catch {
         skipped.push({ path: rel, reason: "unreadable" });
         continue;
@@ -487,7 +490,8 @@ export function buildSmartPack(options) {
   let totalTokens = 0;
 
   for (const candidate of candidates) {
-    const relevanceFloor = terms.length ? 800 : 450;
+    const hasTargeting = terms.length > 0 || seeds.selected.size > 0 || changed.selected.size > 0;
+    const relevanceFloor = hasTargeting ? 800 : 450;
     const useful = candidate.required || candidate.score >= relevanceFloor || selected.length === 0;
     if (!useful) {
       omitted.push({ path: candidate.path, tokens: candidate.estimatedTokens, reason: "low-relevance" });
@@ -605,9 +609,48 @@ function rejectSymlinkParents(root, destination) {
   }
 }
 
+export function parsePack(input) {
+  if (!input) throw new Error("Empty context pack");
+  if (typeof input === "object" && input !== null && input.files && typeof input.files === "object") {
+    return input;
+  }
+  const raw = String(input).trim();
+  if (raw.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && parsed.files && typeof parsed.files === "object") {
+        return parsed;
+      }
+    } catch {
+      // Fall through to markdown parser
+    }
+  }
+
+  const files = {};
+  const sectionRegex = /(?:^|\n)#{1,4}\s+[`"]?([a-zA-Z0-9_./\\-]+?\.[a-zA-Z0-9_-]+)[`"]?\s*(?:\r?\n)+```[a-zA-Z0-9_-]*\r?\n([\s\S]*?)\r?\n```/g;
+  let match;
+  while ((match = sectionRegex.exec(raw)) !== null) {
+    const filePath = match[1].replace(/^[./\\]+/, "");
+    const content = match[2];
+    if (filePath && !filePath.includes(" ") && !filePath.startsWith("#")) {
+      files[filePath] = { content: content.endsWith("\n") ? content : content + "\n" };
+    }
+  }
+
+  if (Object.keys(files).length === 0) {
+    throw new Error("No files found in pack (supports JSON packs or Markdown codeblocks).");
+  }
+
+  return { schemaVersion: 1, files: files };
+}
+
 export function restorePack(pack, root, options) {
   options = options || {};
-  if (!pack || typeof pack !== "object" || !pack.files || typeof pack.files !== "object") throw new Error("Invalid context pack");
+  if (typeof pack === "string") {
+    pack = parsePack(pack);
+  } else if (!pack || typeof pack !== "object" || !pack.files || typeof pack.files !== "object") {
+    throw new Error("Invalid context pack");
+  }
   const absRoot = path.resolve(root);
   const restored = [];
   const skipped = [];

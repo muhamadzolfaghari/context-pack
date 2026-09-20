@@ -115,11 +115,23 @@ JSON packs use relative paths and include token estimates, scores, hashes, and i
 
 ## Safe restore
 
+Restore files directly from your clipboard or from a file (supports both JSON packs and Markdown codeblocks from LLMs):
+
 ```bash
+# Restore files directly from clipboard (skips existing files)
+context-pack --restore
+
+# Restore from clipboard and overwrite existing project files
+context-pack --restore --overwrite
+
+# Restore from a saved JSON or Markdown file
 context-pack --restore context.json
+context-pack --restore pack.md --overwrite
 ```
 
-Restore rejects absolute paths and `..` traversal, refuses existing symlink-parent traversal, preserves existing files by default, and requires `--overwrite` to replace files.
+In the interactive CLI (`cxd`), press `r` to restore directly from the clipboard (`Enter` to preserve existing files, or `o` to overwrite).
+
+Restore safely rejects absolute paths and `..` traversal, refuses symlink-parent traversal, and preserves existing files unless `--overwrite` is explicitly provided.
 
 ## Ignore behavior
 
