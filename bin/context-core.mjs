@@ -9,7 +9,9 @@ const DEFAULT_IGNORES = [
   "node_modules", ".git", "dist", "build", "coverage", ".next", ".nuxt",
   ".turbo", ".cache", ".vercel", ".netlify", ".env", ".env.*", "*.lock",
   "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "*.map", "*.min.js",
-  "*.min.css", "*.log", "*.tsbuildinfo"
+  "*.min.css", "*.log", "*.tsbuildinfo", ".npmrc", ".pypirc", ".netrc",
+  ".ssh", ".aws/credentials", "*.pem", "*.key", "*.p12", "*.pfx",
+  "credentials.json", "service-account*.json"
 ];
 
 const CODE_EXTS = [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts", ".json", ".vue", ".svelte", ".astro"];
@@ -83,6 +85,19 @@ function loadIgnorePatterns(root, extra) {
   return patterns;
 }
 
+function probablySensitive(sample) {
+  if (!sample || !sample.length) return false;
+  const text = sample.toString("utf8");
+  const checks = [
+    /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
+    /(?:^|\n)\s*(?:AWS_SECRET_ACCESS_KEY|NPM_TOKEN|NODE_AUTH_TOKEN|GITHUB_TOKEN|GITLAB_TOKEN)\s*=/i,
+    /(?:^|\n)\s*[_a-z0-9.-]*authToken\s*=/i,
+    /\bgh[opsu]_[A-Za-z0-9_]{20,}\b/,
+    /\bsk-[A-Za-z0-9_-]{20,}\b/
+  ];
+  return checks.some(function (pattern) { return pattern.test(text); });
+}
+
 function probablyText(abs, sample) {
   const base = path.basename(abs).toLowerCase();
   if (base === "dockerfile" || base === "makefile") return true;
@@ -145,6 +160,10 @@ export function scanProject(root, options) {
         continue;
       }
 
+      if (probablySensitive(sample)) {
+        skipped.push({ path: rel, reason: "sensitive-content" });
+        continue;
+      }
       if (!probablyText(abs, sample)) {
         skipped.push({ path: rel, reason: "binary" });
         continue;
