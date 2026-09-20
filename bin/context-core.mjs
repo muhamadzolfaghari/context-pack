@@ -70,7 +70,7 @@ export function resolveContextBudget(target, explicitBudget) {
 }
 
 const DEFAULT_IGNORES = [
-  "node_modules", ".git", "dist", "build", "coverage", ".next", ".nuxt",
+  "node_modules", ".git", ".contextpack", "dist", "build", "coverage", ".next", ".nuxt",
   ".turbo", ".cache", ".vercel", ".netlify", ".env", ".env.*", "*.lock",
   "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "*.map", "*.min.js",
   "*.min.css", "*.log", "*.tsbuildinfo", ".npmrc", ".pypirc", ".netrc",
@@ -185,6 +185,18 @@ export function scanProject(root, options) {
   const skipped = [];
   const stack = [absRoot];
 
+  const useCache = options.cache !== false;
+  const cacheDir = path.join(absRoot, ".contextpack");
+  const cacheFile = path.join(cacheDir, "cache.json");
+  let oldCache = null;
+  if (useCache) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+      if (parsed && parsed.version === 1 && parsed.files) oldCache = parsed.files;
+    } catch {}
+  }
+  const newCacheFiles = {};
+
   while (stack.length) {
     const dir = stack.pop();
     let entries = [];
@@ -212,6 +224,17 @@ export function scanProject(root, options) {
         continue;
       }
 
+      const cached = oldCache && oldCache[rel];
+      if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+        if (cached.reason) {
+          skipped.push({ path: rel, reason: cached.reason, bytes: stat.size });
+        } else {
+          files.push({ path: rel, abs: abs, bytes: stat.size });
+        }
+        newCacheFiles[rel] = cached;
+        continue;
+      }
+
       let sample = Buffer.alloc(0);
       try {
         const fd = fs.openSync(abs, "r");
@@ -229,14 +252,24 @@ export function scanProject(root, options) {
 
       if (probablySensitive(sample)) {
         skipped.push({ path: rel, reason: "sensitive-content" });
+        newCacheFiles[rel] = { mtimeMs: stat.mtimeMs, size: stat.size, reason: "sensitive-content" };
         continue;
       }
       if (!probablyText(abs, sample)) {
         skipped.push({ path: rel, reason: "binary" });
+        newCacheFiles[rel] = { mtimeMs: stat.mtimeMs, size: stat.size, reason: "binary" };
         continue;
       }
       files.push({ path: rel, abs: abs, bytes: stat.size });
+      newCacheFiles[rel] = { mtimeMs: stat.mtimeMs, size: stat.size, reason: null };
     }
+  }
+
+  if (useCache && Object.keys(newCacheFiles).length > 0) {
+    try {
+      if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+      fs.writeFileSync(cacheFile, JSON.stringify({ version: 1, files: newCacheFiles }), "utf8");
+    } catch {}
   }
 
   files.sort(function (a, b) { return a.path.localeCompare(b.path); });
@@ -501,7 +534,8 @@ export function buildSmartPack(options) {
       omitted.push({ path: candidate.path, tokens: candidate.estimatedTokens, reason: "token-budget" });
       continue;
     }
-    const content = full(candidate.path);
+    let content = full(candidate.path);
+    if (options.redact) content = redactSecrets(content);
     if (!content.trim()) continue;
     const tokens = estimateTokens(content);
     if (!candidate.required && totalTokens + tokens > budget) {
@@ -679,4 +713,38 @@ export function formatTokens(tokens) {
   if (tokens < 1000) return String(tokens);
   if (tokens < 1000000) return (tokens / 1000).toFixed(tokens < 10000 ? 1 : 0) + "k";
   return (tokens / 1000000).toFixed(1) + "M";
+}
+
+export function redactSecrets(content) {
+  if (!content || typeof content !== "string") return content;
+  return content
+    .replace(/\b(?:gh[opsu]_[A-Za-z0-9_]{20,})\b/g, "[REDACTED_GITHUB_TOKEN]")
+    .replace(/\b(?:sk-[A-Za-z0-9_-]{20,})\b/g, "[REDACTED_API_KEY]")
+    .replace(/\b(?:xox[baprs]-[0-9A-Za-z-]{10,})\b/g, "[REDACTED_SLACK_TOKEN]")
+    .replace(/\b(?:AIza[0-9A-Za-z-_]{35})\b/g, "[REDACTED_GOOGLE_KEY]")
+    .replace(/\b(?:AKIA[0-9A-Z]{16})\b/g, "[REDACTED_AWS_KEY]")
+    .replace(/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g, "[REDACTED_PRIVATE_KEY]");
+}
+
+export function loadProjectPresets(root) {
+  const presets = {};
+  const absRoot = path.resolve(root);
+
+  const rcPath = path.join(absRoot, ".contextpackrc.json");
+  try {
+    const data = JSON.parse(fs.readFileSync(rcPath, "utf8"));
+    if (data && data.presets && typeof data.presets === "object") {
+      Object.assign(presets, data.presets);
+    }
+  } catch {}
+
+  const pkgPath = path.join(absRoot, "package.json");
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    if (pkg && pkg.contextPack && pkg.contextPack.presets && typeof pkg.contextPack.presets === "object") {
+      Object.assign(presets, pkg.contextPack.presets);
+    }
+  } catch {}
+
+  return presets;
 }

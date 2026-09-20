@@ -9,7 +9,9 @@ import {
   TARGET_PROFILES,
   buildSmartPack,
   formatTokens,
+  loadProjectPresets,
   parseBudget,
+  redactSecrets,
   renderMarkdown,
   restorePack,
   scanProject
@@ -79,31 +81,36 @@ function help() {
     "  --focus, --task <text>   Focus description used for smart relevance",
     "  --target <provider>      Budget preset: chatgpt, claude, deepseek, chatbox",
     "  --list-targets           Show target presets and safe budgets",
+    "  --preset, -p <name>      Apply team preset from .contextpackrc.json or package.json",
     "  --budget <tokens>        Explicit token budget; overrides --target",
     "  --format <md|json>       Output format (default: markdown)",
     "  --output, -o <file>      Write output to a file",
     "  --stdout                 Print output to stdout",
     "  --copy                   Copy output to the clipboard",
+    "  --redact                 Mask API keys, tokens, and private credentials",
+    "  --no-cache               Bypass .contextpack/cache.json",
     "  --depth <n>              Local dependency expansion depth (default: 4)",
     "  --impact-depth <n>       Reverse-dependency impact depth (default: 1)",
     "  --changed                Prioritize staged, unstaged, and untracked files",
     "  --since <git-ref>        Prioritize files changed since a git ref",
     "  --max-file-bytes <n>     Skip larger files (default: 1000000)",
     "  --ignore <pattern>       Add ignore pattern; repeatable",
-    "  --restore <file.json>    Safely restore a JSON pack",
+    "  --restore <file.json>    Safely restore a JSON or Markdown pack",
     "  --overwrite              Allow restore to replace existing files",
     "  --version, -v            Print version",
     "  --help, -h               Show help",
     "",
     c.bold + "Examples:" + c.reset,
     "  context-pack src/auth --focus \"refresh token flow\" --budget 32k --stdout",
+    "  context-pack --preset review --copy",
+    "  context-pack --target chatgpt --redact --copy",
     "  context-pack src api --focus \"checkout request lifecycle\" -o context.md",
     "  context-pack --target chatgpt --focus \"application architecture\" --copy",
     "  context-pack --target claude --focus \"large refactor context\" -o context.md",
     "  context-pack --target deepseek --changed --focus \"review current work\" --stdout",
     "  context-pack --changed --focus \"review current work\" --budget 32k --stdout",
     "  context-pack --since origin/main --focus \"impact of this branch\" -o context.md",
-    "  context-pack --restore context.json"
+    "  context-pack --restore"
   ].join("\n"));
 }
 
@@ -112,7 +119,7 @@ function parseArgs(argv) {
     seeds: [], ignore: [], format: "markdown", budget: null, target: null,
     dependencyDepth: 4, reverseDependencyDepth: 1, maxFileBytes: 1000000, focus: "",
     stdout: false, copy: false, output: null, restore: null, overwrite: false,
-    changed: false, since: null
+    changed: false, since: null, preset: null, redact: false, cache: true
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -126,6 +133,9 @@ function parseArgs(argv) {
     if (arg === "--help" || arg === "-h") options.help = true;
     else if (arg === "--list-targets") options.listTargets = true;
     else if (arg === "--target") options.target = next();
+    else if (arg === "--preset" || arg === "-p") options.preset = next();
+    else if (arg === "--redact") options.redact = true;
+    else if (arg === "--no-cache") options.cache = false;
     else if (arg === "--version" || arg === "-v") options.version = true;
     else if (arg === "--focus" || arg === "--task") options.focus = next();
     else if (arg === "--budget") options.budget = parseBudget(next());
@@ -153,6 +163,26 @@ function parseArgs(argv) {
     else if (arg.startsWith("-")) throw new Error("Unknown option: " + arg);
     else options.seeds.push(arg);
   }
+
+  if (options.preset) {
+    const presets = loadProjectPresets(ROOT);
+    const p = presets[options.preset];
+    if (!p) {
+      const available = Object.keys(presets).join(", ") || "(none defined)";
+      throw new Error("Unknown preset: " + options.preset + ". Available presets: " + available);
+    }
+    if (p.target && !options.target) options.target = p.target;
+    if (p.budget && !options.budget) options.budget = parseBudget(p.budget);
+    if (p.focus && !options.focus) options.focus = p.focus;
+    if (p.format && options.format === "markdown") options.format = p.format;
+    if (p.seeds && options.seeds.length === 0) options.seeds = p.seeds.slice();
+    if (p.changed) options.changed = true;
+    if (p.since && !options.since) options.since = p.since;
+    if (p.redact) options.redact = true;
+    if (p.depth !== undefined) options.dependencyDepth = p.depth;
+    if (p.impactDepth !== undefined) options.reverseDependencyDepth = p.impactDepth;
+  }
+
   return options;
 }
 
@@ -417,31 +447,55 @@ function startInteractive() {
   function items() {
     if (viewMode === "search") {
       const q = searchQuery.toLowerCase().trim();
+      const terms = q.split(/\s+/).filter(Boolean);
       const results = [];
+
+      function matchSearch(name, rel) {
+        if (terms.length === 0) return { matched: true, score: 0 };
+        let score = 0;
+        const lowerName = name.toLowerCase();
+        const lowerRel = rel.toLowerCase();
+
+        for (const term of terms) {
+          let matched = false;
+          if (lowerName === term) {
+            score += 150;
+            matched = true;
+          } else if (lowerName.startsWith(term)) {
+            score += 100;
+            matched = true;
+          } else if (lowerName.includes(term)) {
+            score += 70;
+            matched = true;
+          } else if (lowerRel.includes(term)) {
+            score += 40;
+            matched = true;
+          } else {
+            const parts = lowerRel.split(/[/._-]+/).filter(Boolean);
+            const initials = parts.map(function (w) { return w[0]; }).join("");
+            if (initials.includes(term)) {
+              score += 35;
+              matched = true;
+            }
+          }
+          if (!matched) return { matched: false, score: 0 };
+        }
+        return { matched: true, score: score };
+      }
 
       // Collect matching directories
       for (const dir of allDirsSet) {
         const name = path.posix.basename(dir);
-        const matchName = name.toLowerCase().includes(q);
-        const matchPath = dir.toLowerCase().includes(q);
-        if (!q || matchName || matchPath) {
-          const count = (dirFiles.get(dir) || []).length;
-          const tokens = dirTokens.get(dir) || 0;
-          let score = 0;
-          if (q) {
-            if (name.toLowerCase() === q) score = 100;
-            else if (name.toLowerCase().startsWith(q)) score = 80;
-            else if (matchName) score = 60;
-            else score = 40;
-          }
+        const res = matchSearch(name, dir);
+        if (res.matched) {
           results.push({
             type: "dir",
             name: name,
             rel: dir,
             abs: path.join(ROOT, dir),
-            count: count,
-            tokens: tokens,
-            score: score
+            count: (dirFiles.get(dir) || []).length,
+            tokens: dirTokens.get(dir) || 0,
+            score: res.score
           });
         }
       }
@@ -449,16 +503,8 @@ function startInteractive() {
       // Collect matching files
       for (const file of scan.files) {
         const name = path.posix.basename(file.path);
-        const matchName = name.toLowerCase().includes(q);
-        const matchPath = file.path.toLowerCase().includes(q);
-        if (!q || matchName || matchPath) {
-          let score = 0;
-          if (q) {
-            if (name.toLowerCase() === q) score = 110;
-            else if (name.toLowerCase().startsWith(q)) score = 90;
-            else if (matchName) score = 70;
-            else score = 30;
-          }
+        const res = matchSearch(name, file.path);
+        if (res.matched) {
           results.push({
             type: "file",
             name: name,
@@ -466,12 +512,12 @@ function startInteractive() {
             abs: file.abs,
             bytes: file.bytes,
             tokens: file.tokens,
-            score: score
+            score: res.score + 5
           });
         }
       }
 
-      if (q) {
+      if (terms.length > 0) {
         results.sort(function (a, b) {
           return b.score - a.score || a.rel.length - b.rel.length || a.rel.localeCompare(b.rel);
         });
@@ -544,13 +590,19 @@ function startInteractive() {
 
   function highlightMatch(text, query) {
     if (!query || !isColor) return text;
-    const q = query.toLowerCase();
-    const idx = text.toLowerCase().indexOf(q);
-    if (idx === -1) return text;
-    const before = text.slice(0, idx);
-    const matched = text.slice(idx, idx + q.length);
-    const after = text.slice(idx + q.length);
-    return before + c.bold + c.yellow + matched + c.reset + after;
+    const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return text;
+    let result = text;
+    for (const term of terms) {
+      const idx = result.toLowerCase().indexOf(term);
+      if (idx !== -1) {
+        const before = result.slice(0, idx);
+        const matched = result.slice(idx, idx + term.length);
+        const after = result.slice(idx + term.length);
+        result = before + c.bold + c.yellow + matched + c.reset + after;
+      }
+    }
+    return result;
   }
 
   function renderProgressBar(usedTokens, maxBudget, barWidth) {
@@ -690,6 +742,49 @@ function startInteractive() {
     console.log("  " + message);
     console.log("  " + sep);
     console.log("  " + c.bold + "Enter / Esc" + c.reset + c.dim + " return to browser  ·  " + c.reset + c.bold + "c" + c.reset + c.dim + " copy again  ·  " + c.reset + c.bold + "q" + c.reset + c.dim + " quit" + c.reset + "\n");
+  }
+
+  let previewLines = [];
+  let previewItem = null;
+  let previewScroll = 0;
+
+  function renderPreview() {
+    const cols = Math.max(60, process.stdout.columns || 80);
+    const rows = Math.max(16, process.stdout.rows || 24);
+    const sep = c.dim + "─".repeat(Math.min(cols, 90)) + c.reset;
+
+    if (!previewItem) {
+      mode = "browse";
+      render();
+      return;
+    }
+
+    const isFile = previewItem.type === "file";
+    const title = isFile
+      ? c.bold + c.cyan + "◆ Preview: " + c.reset + previewItem.rel + c.dim + " (" + previewLines.length + " lines · " + formatBytes(previewItem.bytes) + " · ~" + formatTokens(previewItem.tokens) + " tok)" + c.reset
+      : c.bold + c.cyan + "◆ Folder Contents: " + c.reset + previewItem.rel + "/" + c.dim + " (" + previewItem.count + " files · ~" + formatTokens(previewItem.tokens) + " tok)" + c.reset;
+
+    console.log("");
+    console.log("  " + title);
+    console.log("  " + sep);
+
+    const viewHeight = Math.max(8, rows - 7);
+    const end = Math.min(previewLines.length, previewScroll + viewHeight);
+
+    for (let i = previewScroll; i < end; i++) {
+      const lineNum = c.dim + String(i + 1).padStart(4) + " │ " + c.reset;
+      const content = truncate(previewLines[i] || "", cols - 12);
+      console.log("  " + lineNum + content);
+    }
+
+    for (let i = end - previewScroll; i < viewHeight; i++) {
+      console.log("");
+    }
+
+    console.log("  " + sep);
+    const isSelected = selected.has(previewItem.abs);
+    const selectStatus = isSelected ? c.green + "[✔ Selected]" + c.reset : c.dim + "[Unselected]" + c.reset;
+    console.log("  " + selectStatus + "  " + c.dim + "│" + c.reset + "  " + c.bold + "Space" + c.reset + " toggle  ·  " + c.bold + "↑/k" + c.reset + " up  ·  " + c.bold + "↓/j" + c.reset + " down  ·  " + c.bold + "PgUp/u" + c.reset + " half  ·  " + c.bold + "g/G" + c.reset + " top/end  ·  " + c.bold + "Esc/v/q" + c.reset + " back");
   }
 
   function renderBrowse() {
@@ -837,6 +932,7 @@ function startInteractive() {
       c.bold + "[Enter]" + c.reset + " Open",
       c.bold + "[Tab]" + c.reset + (viewMode === "search" ? " Tree" : " Find"),
       c.bold + "[/]" + c.reset + " Search",
+      c.bold + "[v]" + c.reset + " Preview",
       c.bold + "[p]" + c.reset + " Focus",
       c.bold + "[a]" + c.reset + " All",
       c.bold + "[c]" + c.reset + " Clear",
@@ -850,6 +946,10 @@ function startInteractive() {
 
   function render() {
     clear();
+    if (mode === "preview") {
+      renderPreview();
+      return;
+    }
     if (mode === "target") {
       renderTargetSelector();
       return;
@@ -879,7 +979,8 @@ function startInteractive() {
       seeds: Array.from(selected),
       focus: focusPrompt,
       target: activeTarget,
-      budget: activeTarget ? null : BUDGETS[budgetIndex]
+      budget: activeTarget ? null : BUDGETS[budgetIndex],
+      redact: redact
     });
     builtPack = pack;
     const output = renderOutput(pack, format);
@@ -1003,6 +1104,31 @@ function startInteractive() {
       return;
     }
 
+    // MODE: PREVIEW
+    if (mode === "preview") {
+      const rows = Math.max(16, process.stdout.rows || 24);
+      const viewHeight = Math.max(8, rows - 7);
+      if (k === "escape" || k === "v" || k === "q") {
+        mode = "browse";
+      } else if (k === "up" || k === "k") {
+        previewScroll = Math.max(0, previewScroll - 1);
+      } else if (k === "down" || k === "j") {
+        previewScroll = Math.min(Math.max(0, previewLines.length - viewHeight), previewScroll + 1);
+      } else if (k === "pageup" || k === "u") {
+        previewScroll = Math.max(0, previewScroll - Math.floor(viewHeight / 2));
+      } else if (k === "pagedown" || k === "d") {
+        previewScroll = Math.min(Math.max(0, previewLines.length - viewHeight), previewScroll + Math.floor(viewHeight / 2));
+      } else if (k === "home" || k === "g") {
+        previewScroll = 0;
+      } else if (k === "end" || (key.shift && k === "g")) {
+        previewScroll = Math.max(0, previewLines.length - viewHeight);
+      } else if (k === "space") {
+        if (previewItem) toggleSelection(previewItem);
+      }
+      render();
+      return;
+    }
+
     // MODE: BROWSE
     const visible = items();
 
@@ -1031,6 +1157,19 @@ function startInteractive() {
         if (searchQuery) searchQuery = "";
         else viewMode = "tree";
         cursor = 0;
+      } else if (key.ctrl && k === "v") {
+        const item = visible[cursor];
+        if (item) {
+          previewItem = item;
+          previewScroll = 0;
+          if (item.type === "file") {
+            try { previewLines = fs.readFileSync(item.abs, "utf8").split(/\r?\n/); } catch { previewLines = ["(Unable to read file content)"]; }
+          } else {
+            const files = dirFiles.get(item.rel) || [];
+            previewLines = files.map(function (f) { return f.path + "  (" + formatBytes(f.bytes) + ", ~" + formatTokens(f.tokens) + " tok)"; });
+          }
+          mode = "preview";
+        }
       } else if (k === "up") {
         cursor = Math.max(0, cursor - 1);
       } else if (k === "down") {
@@ -1064,6 +1203,29 @@ function startInteractive() {
 
     // When in Git mode or Tree mode
     if (k === "q") process.exit(0);
+
+    if (k === "v") {
+      const item = visible[cursor];
+      if (item && item.type !== "parent") {
+        previewItem = item;
+        previewScroll = 0;
+        if (item.type === "file") {
+          try {
+            previewLines = fs.readFileSync(item.abs, "utf8").split(/\r?\n/);
+          } catch {
+            previewLines = ["(Unable to read file content)"];
+          }
+        } else {
+          const files = dirFiles.get(item.rel) || [];
+          previewLines = files.map(function (f) {
+            return f.path + "  (" + formatBytes(f.bytes) + ", ~" + formatTokens(f.tokens) + " tok)";
+          });
+        }
+        mode = "preview";
+        render();
+        return;
+      }
+    }
 
     if (k === "/") {
       viewMode = "search";
