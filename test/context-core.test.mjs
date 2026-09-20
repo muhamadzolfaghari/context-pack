@@ -14,7 +14,9 @@ import {
   resolveTargetProfile,
   resolveLocalImport,
   restorePack,
-  scanProject
+  scanProject,
+  loadProjectPresets,
+  redactSecrets
 } from "../bin/context-core.mjs";
 
 function fixture(files) {
@@ -227,4 +229,64 @@ test("smart pack records target metadata", function () {
   assert.equal(pack.budget, 750000);
   assert.equal(pack.budgetSource, "target-preset");
   assert.equal(pack.target.contextWindow, 1000000);
+});
+
+test("redactSecrets masks API keys, tokens, and private keys", function () {
+  const code = [
+    "const openai = 'sk-12345678901234567890123456';",
+    "const gh = 'ghp_12345678901234567890123456';",
+    "const aws = 'AKIA1234567890123456';",
+    "const slack = 'xoxb-12345678901-abcdefghij';",
+    "const google = 'AIzaSyD-1234567890123456789012345678901';",
+    "-----BEGIN RSA PRIVATE KEY-----",
+    "secret",
+    "-----END RSA PRIVATE KEY-----"
+  ].join("\n");
+  const redacted = redactSecrets(code);
+  assert.ok(!redacted.includes("sk-12345678901234567890123456"));
+  assert.ok(!redacted.includes("ghp_12345678901234567890123456"));
+  assert.ok(!redacted.includes("AKIA1234567890123456"));
+  assert.ok(!redacted.includes("xoxb-12345678901-abcdefghij"));
+  assert.ok(!redacted.includes("AIzaSyD-1234567890123456789012345678901"));
+  assert.ok(!redacted.includes("secret"));
+  assert.ok(redacted.includes("[REDACTED_API_KEY]"));
+  assert.ok(redacted.includes("[REDACTED_GITHUB_TOKEN]"));
+  assert.ok(redacted.includes("[REDACTED_AWS_KEY]"));
+  assert.ok(redacted.includes("[REDACTED_PRIVATE_KEY]"));
+});
+
+test("loadProjectPresets reads from .contextpackrc.json and package.json", function () {
+  const root = fixture({
+    ".contextpackrc.json": JSON.stringify({
+      presets: {
+        review: { changed: true, target: "claude" }
+      }
+    }),
+    "package.json": JSON.stringify({
+      contextPack: {
+        presets: {
+          audit: { budget: 16000 }
+        }
+      }
+    })
+  });
+  const presets = loadProjectPresets(root);
+  assert.deepEqual(presets.review, { changed: true, target: "claude" });
+  assert.deepEqual(presets.audit, { budget: 16000 });
+});
+
+test("scanProject uses incremental cache on unchanged files", function () {
+  const root = fixture({
+    "src/a.js": "export const a = 1;\n",
+    "src/b.js": "export const b = 2;\n"
+  });
+  const scan1 = scanProject(root);
+  assert.equal(scan1.files.length, 2);
+  const cacheFile = path.join(root, ".contextpack", "cache.json");
+  assert.ok(fs.existsSync(cacheFile));
+
+  // Second scan should read from cache
+  const scan2 = scanProject(root);
+  assert.equal(scan2.files.length, 2);
+  assert.deepEqual(scan2.files.map(x => x.path), ["src/a.js", "src/b.js"]);
 });
