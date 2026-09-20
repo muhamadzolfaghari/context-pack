@@ -6,6 +6,7 @@ import readline from "node:readline";
 import { execFileSync } from "node:child_process";
 import {
   DEFAULT_BUDGET,
+  TARGET_PROFILES,
   buildSmartPack,
   formatTokens,
   parseBudget,
@@ -28,7 +29,9 @@ function help() {
     "",
     "Options:",
     "  --focus, --task <text>   Focus description used for smart relevance",
-    "  --budget <tokens>        Token budget: 8000, 32k, 1m (default: 32k)",
+    "  --target <provider>      Budget preset: chatgpt, claude, deepseek, chatbox",
+    "  --list-targets           Show target presets and safe budgets",
+    "  --budget <tokens>        Explicit token budget; overrides --target",
     "  --format <md|json>       Output format (default: markdown)",
     "  --output, -o <file>      Write output to a file",
     "  --stdout                 Print output to stdout",
@@ -47,7 +50,9 @@ function help() {
     "Examples:",
     "  context-pack src/auth --focus \"refresh token flow\" --budget 32k --stdout",
     "  context-pack src api --focus \"checkout request lifecycle\" -o context.md",
-    "  context-pack --focus \"application architecture\" --budget 128k --copy",
+    "  context-pack --target chatgpt --focus \"application architecture\" --copy",
+    "  context-pack --target claude --focus \"large refactor context\" -o context.md",
+    "  context-pack --target deepseek --changed --focus \"review current work\" --stdout",
     "  context-pack --changed --focus \"review current work\" --budget 32k --stdout",
     "  context-pack --since origin/main --focus \"impact of this branch\" -o context.md",
     "  context-pack --restore context.json"
@@ -56,7 +61,7 @@ function help() {
 
 function parseArgs(argv) {
   const options = {
-    seeds: [], ignore: [], format: "markdown", budget: DEFAULT_BUDGET,
+    seeds: [], ignore: [], format: "markdown", budget: null, target: null,
     dependencyDepth: 4, reverseDependencyDepth: 1, maxFileBytes: 1000000, focus: "",
     stdout: false, copy: false, output: null, restore: null, overwrite: false,
     changed: false, since: null
@@ -71,6 +76,8 @@ function parseArgs(argv) {
     };
 
     if (arg === "--help" || arg === "-h") options.help = true;
+    else if (arg === "--list-targets") options.listTargets = true;
+    else if (arg === "--target") options.target = next();
     else if (arg === "--version" || arg === "-v") options.version = true;
     else if (arg === "--focus" || arg === "--task") options.focus = next();
     else if (arg === "--budget") options.budget = parseBudget(next());
@@ -123,6 +130,25 @@ function collectChangedFiles(options) {
   return Array.from(files);
 }
 
+function printTargets() {
+  const rows = Object.values(TARGET_PROFILES).map(function (profile) {
+    return [
+      profile.id.padEnd(10),
+      String(profile.safeBudget).padStart(8),
+      profile.contextWindow ? String(profile.contextWindow).padStart(8) : " unknown",
+      profile.modelFamily
+    ].join("  ");
+  });
+  console.log([
+    "Target      Safe pack   Context   Model family",
+    "----------  ---------   --------  ------------",
+    ...rows,
+    "",
+    "Safe pack budgets reserve room for output, chat history, system/tool overhead, and reasoning.",
+    "Use --budget to override any preset."
+  ].join("\n"));
+}
+
 function readClipboard() {
   try {
     if (process.platform === "darwin") return execFileSync("pbpaste", [], { encoding: "utf8" });
@@ -160,6 +186,7 @@ function runNonInteractive(options) {
     root: ROOT,
     seeds: options.seeds,
     focus: options.focus,
+    target: options.target,
     budget: options.budget,
     dependencyDepth: options.dependencyDepth,
     reverseDependencyDepth: options.reverseDependencyDepth,
@@ -347,6 +374,7 @@ try {
   const options = parseArgs(argv);
   if (options.help) help();
   else if (options.version) console.log(VERSION);
+  else if (options.listTargets) printTargets();
   else if (argv.length) runNonInteractive(options);
   else startInteractive();
 } catch (error) {
