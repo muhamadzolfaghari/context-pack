@@ -18,6 +18,7 @@ import {
 const VERSION = "1.1.0";
 const ROOT = process.cwd();
 const BUDGETS = [8000, 32000, 128000, 1000000];
+const TARGET_ORDER = [null, "chatgpt", "claude", "deepseek", "chatbox"];
 
 function help() {
   console.log([
@@ -224,6 +225,7 @@ function startInteractive() {
   let query = "";
   let format = "markdown";
   let budgetIndex = 1;
+  let targetIndex = 0;
   let mode = "browse";
   let message = "";
 
@@ -269,7 +271,13 @@ function startInteractive() {
     if (cursor >= visible.length) cursor = Math.max(0, visible.length - 1);
     console.log("  Context Pack - Smart Selection\n");
     console.log("  " + (path.relative(ROOT, currentDir) || "."));
-    console.log("  " + selected.size + " selected | " + format + " | budget " + formatTokens(BUDGETS[budgetIndex]));
+    const activeTarget = TARGET_ORDER[targetIndex];
+    const activeBudget = activeTarget ? TARGET_PROFILES[activeTarget].safeBudget : BUDGETS[budgetIndex];
+    console.log(
+      "  " + selected.size + " selected | " + format +
+      " | " + (activeTarget ? "target " + activeTarget : "custom budget") +
+      " | budget " + formatTokens(activeBudget)
+    );
     if (query) console.log("  /" + query);
     console.log("");
 
@@ -279,12 +287,19 @@ function startInteractive() {
       const item = visible[i];
       console.log("  " + (i === cursor ? ">" : " ") + " " + (selected.has(item.abs) ? "x" : " ") + " " + item.name + (item.type === "dir" ? "/" : ""));
     }
-    console.log("\n  Enter open/select | Space select | Left back | Ctrl+E build | f format | b budget");
+    console.log("\n  Enter open/select | Space select | Left back | Ctrl+E build | f format | t target | b budget");
     console.log("  Type to focus/search | r restore | Esc clear/back | q quit");
   }
 
   function build() {
-    const pack = buildSmartPack({ root: ROOT, seeds: Array.from(selected), focus: query, budget: BUDGETS[budgetIndex] });
+    const activeTarget = TARGET_ORDER[targetIndex];
+    const pack = buildSmartPack({
+      root: ROOT,
+      seeds: Array.from(selected),
+      focus: query,
+      target: activeTarget,
+      budget: activeTarget ? null : BUDGETS[budgetIndex]
+    });
     const output = renderOutput(pack, format);
     const copied = writeClipboard(output);
     message = (copied ? "Copied " : "Built ") + pack.selectedCount + " files, " + formatTokens(pack.totalTokens) + " tokens" + (copied ? " to clipboard." : "; clipboard unavailable.");
@@ -331,7 +346,11 @@ function startInteractive() {
       return;
     }
     if (k === "f") format = format === "markdown" ? "json" : "markdown";
-    else if (k === "b") budgetIndex = (budgetIndex + 1) % BUDGETS.length;
+    else if (k === "t") targetIndex = (targetIndex + 1) % TARGET_ORDER.length;
+    else if (k === "b") {
+      targetIndex = 0;
+      budgetIndex = (budgetIndex + 1) % BUDGETS.length;
+    }
     else if (k === "r") mode = "restore";
     else if (k === "up") cursor = Math.max(0, cursor - 1);
     else if (k === "down") cursor = Math.min(Math.max(0, visible.length - 1), cursor + 1);
