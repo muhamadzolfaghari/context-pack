@@ -1,6 +1,6 @@
 {
   "name": "@muhamadzolfaghari/context-pack",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Smart, deterministic, token-budgeted repository context packer for AI-assisted development workflows.",
   "bin": {
     "context-pack": "./bin/cxd-cli.mjs",
