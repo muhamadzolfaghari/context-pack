@@ -22,7 +22,7 @@ A raw repository dump is usually too large and noisy. `context-pack` produces a 
 - matching `*.test.*` / `*.spec.*` files are pulled in as related evidence
 - project manifests, entrypoints, config, and README files receive structural priority
 - `--focus` terms increase path/content relevance
-- generated, secret, binary, symlinked, and oversized files are filtered
+- generated, binary, symlinked, oversized, credential, and secret-like files are filtered
 - files are admitted under a token budget
 - every selected file carries inclusion reasons
 - omitted files report whether they lost on relevance or token budget
@@ -99,7 +99,7 @@ Restore rejects absolute paths and `..` traversal, refuses existing symlink-pare
 
 ## Ignore behavior
 
-Built-in exclusions cover common generated and sensitive paths such as `node_modules`, `.git`, build output, caches, lock files, source maps, minified bundles, `.env` files, and logs. Project `.gitignore` and optional `.contextpackignore` entries are also read.
+Built-in exclusions cover common generated and sensitive paths such as `node_modules`, `.git`, build output, caches, lock files, source maps, minified bundles, `.env`, `.npmrc`, SSH/AWS credential locations, private-key formats, and logs. The scanner also rejects text that looks like private-key or common token material. Project `.gitignore` and optional `.contextpackignore` entries are also read.
 
 ## Quality
 
