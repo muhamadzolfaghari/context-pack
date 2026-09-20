@@ -15,7 +15,7 @@ import {
   scanProject
 } from "./context-core.mjs";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const ROOT = process.cwd();
 const BUDGETS = [8000, 32000, 128000, 1000000];
 const TARGET_ORDER = [null, "chatgpt", "claude", "deepseek", "chatbox"];
