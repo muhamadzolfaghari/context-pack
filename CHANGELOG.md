@@ -3,8 +3,8 @@
 ## 1.3.0
 
 - Renamed the project, npm package, repository identity, and primary CLI to `CtxLab` / `ctxlab`.
-- Migrated project-owned runtime state from `.contextpack*` to `.ctxlab*`.
-- Renamed the package configuration namespace from `contextPack` to `ctxlab`.
+- Standardized project-owned runtime state under `.ctxlab*`.
+- Standardized the package configuration namespace as `ctxlab`.
 - Updated CI, documentation, generated output, tests, and repository links for the new identity.
 - Repositioned the project as a broader context engineering toolkit while keeping smart packing, apply/revert, budgeting, sanitization, and Git-aware selection.
 
