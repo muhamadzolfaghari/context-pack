@@ -16,7 +16,7 @@ export function loadProjectPresets(root) {
   const presets = {};
   const absRoot = path.resolve(root);
 
-  const rcPath = path.join(absRoot, ".contextpackrc.json");
+  const rcPath = path.join(absRoot, ".ctxlabrc.json");
   try {
     const data = JSON.parse(fs.readFileSync(rcPath, "utf8"));
     if (data && data.presets && typeof data.presets === "object") {
@@ -27,8 +27,8 @@ export function loadProjectPresets(root) {
   const pkgPath = path.join(absRoot, "package.json");
   try {
     const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-    if (pkg && pkg.contextPack && pkg.contextPack.presets && typeof pkg.contextPack.presets === "object") {
-      Object.assign(presets, pkg.contextPack.presets);
+    if (pkg && pkg.ctxlab && pkg.ctxlab.presets && typeof pkg.ctxlab.presets === "object") {
+      Object.assign(presets, pkg.ctxlab.presets);
     }
   } catch {}
 
