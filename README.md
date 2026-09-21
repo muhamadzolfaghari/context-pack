@@ -113,25 +113,34 @@ By default, reverse-dependency expansion uses one impact level. Increase it with
 
 JSON packs use relative paths and include token estimates, scores, hashes, and inclusion reasons. Markdown packs include a selected-file table, project tree, file contents, and omitted-file summary.
 
-## Safe restore
+## ChatGPT & LLM Bidirectional Workflow (Dump, Apply & Revert)
 
-Restore files directly from your clipboard or from a file (supports both JSON packs and Markdown codeblocks from LLMs):
+Easily export context to ChatGPT, Claude, or DeepSeek, and apply the chatbot's code updates directly back into your project at their exact file locations with automatic safety backups.
 
 ```bash
-# Restore files directly from clipboard (skips existing files)
-context-pack --restore
+# 1. Export context dump with AI Assistant Instructions protocol (copied to clipboard)
+cxd dump src/auth --focus "refresh token flow" --copy
 
-# Restore from clipboard and overwrite existing project files
-context-pack --restore --overwrite
+# 2. Paste into ChatGPT / Claude. Once the chatbot responds with code blocks, copy its response.
 
-# Restore from a saved JSON or Markdown file
-context-pack --restore context.json
-context-pack --restore pack.md --overwrite
+# 3. Apply changes directly to your project (previews diff and creates automatic backup)
+cxd apply
+
+# Optional: preview proposed changes without writing files
+cxd apply --dry-run
+
+# Optional: apply from a saved markdown or patch file
+cxd apply response.md
+
+# Undo/revert applied changes anytime from the safety backup
+cxd revert
 ```
 
-In the interactive CLI (`cxd`), press `r` to restore directly from the clipboard (`Enter` to preserve existing files, or `o` to overwrite).
+In the interactive CLI (`cxd`):
+- Press **`Ctrl+E`** to build and copy your context pack.
+- When you receive the chatbot's response, press **`r`** to open the **Apply AI Response** modal: it displays a live diff preview table of all files to create, update, or keep unchanged, and applies them upon `Enter` with automated safety backup!
 
-Restore safely rejects absolute paths and `..` traversal, refuses symlink-parent traversal, and preserves existing files unless `--overwrite` is explicitly provided.
+Restore and apply safely reject absolute paths and `..` traversal, refuse symlink-parent traversal, and save safety snapshots to `.contextpack/backups/<timestamp>/`.
 
 ## Ignore behavior
 
