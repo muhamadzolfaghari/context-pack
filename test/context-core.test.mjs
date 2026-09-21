@@ -23,7 +23,7 @@ import {
 } from "../bin/context-core.mjs";
 
 function fixture(files) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "context-pack-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ctxlab-"));
   for (const [rel, content] of Object.entries(files)) {
     const dest = path.join(root, rel);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -129,7 +129,7 @@ test("markdown contains rationale", function () {
 });
 
 test("restore rejects traversal", function () {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "context-pack-restore-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ctxlab-restore-"));
   assert.throws(function () {
     restorePack({ files: { "../escape.txt": { content: "no" } } }, root);
   }, /Unsafe restore path/);
@@ -144,7 +144,7 @@ test("restore preserves existing files by default", function () {
 
 test("restore extracts and restores files from markdown string", function () {
   const root = fixture({});
-  const markdown = "# Context Pack\n\n## src/hello.js\n```javascript\nconsole.log('hello world');\n```\n\n## config/settings.json\n```json\n{\"enabled\":true}\n```\n";
+  const markdown = "# CtxLab\n\n## src/hello.js\n```javascript\nconsole.log('hello world');\n```\n\n## config/settings.json\n```json\n{\"enabled\":true}\n```\n";
   const result = restorePack(markdown, root);
   assert.equal(result.restored.length, 2);
   assert.equal(fs.readFileSync(path.join(root, "src/hello.js"), "utf8"), "console.log('hello world');\n");
@@ -258,15 +258,15 @@ test("redactSecrets masks API keys, tokens, and private keys", function () {
   assert.ok(redacted.includes("[REDACTED_PRIVATE_KEY]"));
 });
 
-test("loadProjectPresets reads from .contextpackrc.json and package.json", function () {
+test("loadProjectPresets reads from .ctxlabrc.json and package.json", function () {
   const root = fixture({
-    ".contextpackrc.json": JSON.stringify({
+    ".ctxlabrc.json": JSON.stringify({
       presets: {
         review: { changed: true, target: "claude" }
       }
     }),
     "package.json": JSON.stringify({
-      contextPack: {
+      ctxlab: {
         presets: {
           audit: { budget: 16000 }
         }
@@ -285,7 +285,7 @@ test("scanProject uses incremental cache on unchanged files", function () {
   });
   const scan1 = scanProject(root);
   assert.equal(scan1.files.length, 2);
-  const cacheFile = path.join(root, ".contextpack", "cache.json");
+  const cacheFile = path.join(root, ".ctxlab", "cache.json");
   assert.ok(fs.existsSync(cacheFile));
 
   // Second scan should read from cache
