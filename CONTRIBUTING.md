@@ -1,4 +1,4 @@
-# Contributing to context-pack
+# Contributing to ctxlab
 
 Contributions are welcome for correctness, performance, language/framework discovery, selection quality, tests, and documentation.
 
