@@ -115,7 +115,7 @@ export function renderFocusModal(state) {
   console.log("");
   console.log("  " + c.bold + c.cyan + "◆ CONTEXT PACK" + c.reset + " — " + c.bold + "Set Task Focus Prompt" + c.reset);
   console.log("  " + c.dim + "Enter a description of what you want the LLM to achieve." + c.reset);
-  console.log("  " + c.dim + "Context Pack ranks and pulls dependencies and tests based on this prompt." + c.reset);
+  console.log("  " + c.dim + "CtxLab ranks and pulls dependencies and tests based on this prompt." + c.reset);
   console.log("  " + sep);
   console.log("  " + c.bold + "Prompt:" + c.reset + " " + c.cyan + (state.focusInput || c.dim + "(type your task, e.g. refactor auth flow and update tests)" + c.reset) + c.bold + "█" + c.reset);
   console.log("  " + sep);
@@ -168,7 +168,7 @@ export function renderDoneModal(state) {
   const sep = c.dim + "─".repeat(Math.min(cols, 80)) + c.reset;
 
   console.log("");
-  console.log("  " + c.bold + c.green + "✔ Context Pack Built Successfully!" + c.reset);
+  console.log("  " + c.bold + c.green + "✔ CtxLab Built Successfully!" + c.reset);
   console.log("  " + sep);
   if (state.builtPack) {
     console.log("  " + padEnd(c.dim + "Files Selected:" + c.reset, 24) + c.bold + state.builtPack.selectedCount + c.reset + " / " + state.builtPack.candidateCount + " scanned");
