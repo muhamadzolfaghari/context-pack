@@ -62,7 +62,7 @@ export function handlePackCommand(options, root) {
     if (isDump && options.copy) {
       console.error(c.bold + c.green + "✔ Context dump copied to clipboard with AI Assistant instructions!" + c.reset);
       console.error(c.dim + "1. Paste into ChatGPT, Claude, or DeepSeek." + c.reset);
-      console.error(c.dim + "2. Once the chatbot responds, copy its response and run: context-pack apply" + c.reset);
+      console.error(c.dim + "2. Once the chatbot responds, copy its response and run: ctxlab apply" + c.reset);
     }
   }
 
