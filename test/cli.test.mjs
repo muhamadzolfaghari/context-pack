@@ -9,7 +9,7 @@ import { handleRevertCommand } from "../src/cli/commands/revert.js";
 import { handlePackCommand } from "../src/cli/commands/pack.js";
 
 function fixture(files) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "context-pack-cli-test-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ctxlab-cli-test-"));
   for (const [rel, content] of Object.entries(files)) {
     const dest = path.join(root, rel);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
