@@ -11,7 +11,7 @@ export function handleApplyCommand(source, options, root) {
   } else {
     raw = readClipboard();
     if (!raw) {
-      throw new Error("Clipboard is empty. Copy ChatGPT's response with code blocks first or specify a file path (e.g. context-pack apply response.md).");
+      throw new Error("Clipboard is empty. Copy ChatGPT's response with code blocks first or specify a file path (e.g. ctxlab apply response.md).");
     }
   }
 
@@ -27,7 +27,7 @@ export function handleApplyCommand(source, options, root) {
     return result;
   }
 
-  console.log(c.bold + "Context Pack — Apply AI Response" + (dryRun ? " [DRY RUN]" : "") + c.reset + "\n");
+  console.log(c.bold + "CtxLab — Apply AI Response" + (dryRun ? " [DRY RUN]" : "") + c.reset + "\n");
   for (const item of result.plan) {
     let tag = c.dim + "[UNCHANGED]" + c.reset;
     let delta = c.dim + item.lines + " lines" + c.reset;
@@ -51,7 +51,7 @@ export function handleApplyCommand(source, options, root) {
     if (result.backupDir) {
       const relBackup = path.relative(absRoot, result.backupDir);
       console.log(c.dim + "Safety backup saved to: " + relBackup + c.reset);
-      console.log(c.dim + "To revert changes anytime: context-pack revert " + result.timestamp + c.reset);
+      console.log(c.dim + "To revert changes anytime: ctxlab revert " + result.timestamp + c.reset);
     }
   }
 
