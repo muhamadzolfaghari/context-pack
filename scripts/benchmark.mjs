@@ -4,7 +4,7 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { buildSmartPack } from "../bin/context-core.mjs";
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "context-pack-bench-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "ctxlab-bench-"));
 fs.mkdirSync(path.join(root, "src"), { recursive: true });
 fs.writeFileSync(path.join(root, "package.json"), "{\"name\":\"bench\"}\n");
 
