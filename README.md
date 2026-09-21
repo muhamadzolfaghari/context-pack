@@ -9,7 +9,7 @@
 
 `ctxlab` selects, packs, budgets, sanitizes, and applies repository context for AI chat and coding workflows. Its deterministic engine follows dependencies, ranks task relevance, explains inclusion decisions, and keeps context within model-aware token budgets.
 
-The repository is `ctxlab`; the npm package is `@muhamadzolfaghari/ctxlab`, and the primary executable is `ctxlab`.
+The repository is `ctxlab`; the npm package is `ctxlab`, and the primary executable is `ctxlab`.
 
 ## Why
 
@@ -32,7 +32,7 @@ The selection engine is deterministic and does not call a remote model.
 ## Install
 
 ```bash
-npm install -g @muhamadzolfaghari/ctxlab
+npm install -g ctxlab
 ```
 
 ```bash

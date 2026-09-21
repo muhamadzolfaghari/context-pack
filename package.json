@@ -1,5 +1,5 @@
 {
-  "name": "@muhamadzolfaghari/ctxlab",
+  "name": "ctxlab",
   "version": "1.3.0",
   "description": "Deterministic context engineering toolkit for selecting, packing, budgeting, sanitizing, and applying repository context for AI workflows.",
   "main": "./src/index.js",
@@ -47,7 +47,6 @@
   },
   "publishConfig": {
     "access": "public",
-    "provenance": true,
     "registry": "https://registry.npmjs.org/"
   },
   "repository": {

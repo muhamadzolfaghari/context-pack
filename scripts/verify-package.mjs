@@ -6,7 +6,7 @@ const required = ["src/index.js", "bin/context-core.mjs", "bin/ctxlab.mjs", "REA
 for (const file of required) {
   if (!fs.existsSync(file)) throw new Error("Missing publish file: " + file);
 }
-if (!pkg.name === "@muhamadzolfaghari/ctxlab") throw new Error("Package name must be @muhamadzolfaghari/ctxlab.");
+if (pkg.name !== "ctxlab") throw new Error("Package name must be ctxlab.");
 if (pkg.dependencies && Object.keys(pkg.dependencies).length) throw new Error("Runtime dependencies are not allowed.");
 console.log("package verification passed");
 
