@@ -4,26 +4,26 @@ import { c, isColor } from "./terminal.js";
 
 export function printHelp(version) {
   console.log([
-    c.bold + "context-pack " + (version || "") + c.reset + " — Smart, token-budgeted repository context packer for LLMs",
+    c.bold + "ctxlab " + (version || "") + c.reset + " — Smart, token-budgeted repository context packer for LLMs",
     "",
     c.bold + "Usage:" + c.reset,
-    "  context-pack [paths...] [options]            Interactive explorer or export pack",
-    "  context-pack dump [paths...] [options]       Export dump with AI Assistant Instructions protocol",
-    "  context-pack apply [file] [options]          Apply AI response (from clipboard or file) to project",
-    "  context-pack revert [timestamp]              Revert changes from a previous backup",
+    "  ctxlab [paths...] [options]            Interactive explorer or export pack",
+    "  ctxlab dump [paths...] [options]       Export dump with AI Assistant Instructions protocol",
+    "  ctxlab apply [file] [options]          Apply AI response (from clipboard or file) to project",
+    "  ctxlab revert [timestamp]              Revert changes from a previous backup",
     "",
     c.bold + "Options:" + c.reset,
     "  --focus, --task <text>   Focus description used for smart relevance",
     "  --target <provider>      Budget preset: chatgpt, claude, deepseek, chatbox",
     "  --list-targets           Show target presets and safe budgets",
-    "  --preset, -p <name>      Apply team preset from .contextpackrc.json or package.json",
+    "  --preset, -p <name>      Apply team preset from .ctxlabrc.json or package.json",
     "  --budget <tokens>        Explicit token budget; overrides --target",
     "  --format <md|json>       Output format (default: markdown)",
     "  --output, -o <file>      Write output to a file",
     "  --stdout                 Print output to stdout",
     "  --copy                   Copy output to the clipboard",
     "  --redact                 Mask API keys, tokens, and private credentials",
-    "  --no-cache               Bypass .contextpack/cache.json",
+    "  --no-cache               Bypass .ctxlab/cache.json",
     "  --dry-run                Preview changes without writing files (for apply)",
     "  --no-backup              Skip automatic safety backup before applying",
     "  --depth <n>              Local dependency expansion depth (default: 4)",
@@ -38,18 +38,18 @@ export function printHelp(version) {
     "  --help, -h               Show help",
     "",
     c.bold + "Examples:" + c.reset,
-    "  context-pack dump src/auth --focus \"login flow\" --copy",
-    "  context-pack apply                           # Parse clipboard & update project files",
-    "  context-pack apply response.md --dry-run     # Preview proposed changes",
-    "  context-pack revert                          # Restore files from latest backup",
-    "  context-pack --preset review --copy",
-    "  context-pack --target chatgpt --redact --copy",
-    "  context-pack --restore"
+    "  ctxlab dump src/auth --focus \"login flow\" --copy",
+    "  ctxlab apply                           # Parse clipboard & update project files",
+    "  ctxlab apply response.md --dry-run     # Preview proposed changes",
+    "  ctxlab revert                          # Restore files from latest backup",
+    "  ctxlab --preset review --copy",
+    "  ctxlab --target chatgpt --redact --copy",
+    "  ctxlab --restore"
   ].join("\n"));
 }
 
 export function printTargets() {
-  console.log(c.bold + "Context Pack — Target Profiles & Safe Budgets" + c.reset + "\n");
+  console.log(c.bold + "CtxLab — Target Profiles & Safe Budgets" + c.reset + "\n");
   const rows = Object.values(TARGET_PROFILES).map(function (profile) {
     return [
       c.cyan + profile.id.padEnd(10) + c.reset,
