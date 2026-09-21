@@ -8,8 +8,7 @@
     "./bin/context-core.mjs": "./bin/context-core.mjs"
   },
   "bin": {
-    "context-pack": "./bin/cxd-cli.mjs",
-    "cxd": "./bin/cxd-cli.mjs"
+    "context-pack": "./bin/cxd-cli.mjs"
   },
   "files": [
     "src/",

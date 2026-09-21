@@ -51,7 +51,7 @@ export function handleApplyCommand(source, options, root) {
     if (result.backupDir) {
       const relBackup = path.relative(absRoot, result.backupDir);
       console.log(c.dim + "Safety backup saved to: " + relBackup + c.reset);
-      console.log(c.dim + "To revert changes anytime: context-pack revert " + result.timestamp + " (or cxd revert)" + c.reset);
+      console.log(c.dim + "To revert changes anytime: context-pack revert " + result.timestamp + c.reset);
     }
   }
 

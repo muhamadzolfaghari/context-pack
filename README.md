@@ -35,11 +35,8 @@ The selection engine is deterministic and does not call a remote model.
 npm install -g @muhamadzolfaghari/context-pack
 ```
 
-Both commands are provided:
-
 ```bash
 context-pack --help
-cxd --help
 ```
 
 ## Target-aware budgets
@@ -134,12 +131,9 @@ context-pack apply response.md
 
 # Undo/revert applied changes anytime from the safety backup
 context-pack revert
-
-# (Shorthand alias: 'cxd' works identically for all commands)
-cxd apply
 ```
 
-In the interactive CLI (`context-pack` or `cxd`):
+In the interactive CLI (`context-pack`):
 - Press **`Ctrl+E`** to build and copy your context pack.
 - When you receive the chatbot's response, press **`r`** to open the **Apply AI Response** modal: it displays a live diff preview table of all files to create, update, or keep unchanged, and applies them upon `Enter` with automated safety backup!
 
