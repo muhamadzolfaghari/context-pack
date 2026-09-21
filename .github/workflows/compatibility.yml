@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: context-pack-compat-${{ github.ref }}
+  group: ctxlab-compat-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -39,4 +39,4 @@ jobs:
         run: npm test
 
       - name: CLI smoke test
-        run: node bin/cxd-cli.mjs --version
+        run: node bin/ctxlab.mjs --version
