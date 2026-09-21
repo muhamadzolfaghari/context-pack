@@ -3,8 +3,9 @@ import { loadProjectPresets } from "../core/presets.js";
 import { c, isColor } from "./terminal.js";
 
 export function printHelp(version) {
+  const ver = version ? "v" + version : "v1.3.0";
   console.log([
-    c.bold + "ctxlab " + (version || "") + c.reset + " — Smart, token-budgeted repository context packer for LLMs",
+    c.bold + c.cyan + "Context Lab " + c.reset + c.dim + ver + c.reset + " — Smart, token-budgeted repository context packer for LLMs",
     "",
     c.bold + "Usage:" + c.reset,
     "  ctxlab [paths...] [options]            Interactive explorer or export pack",
@@ -48,8 +49,9 @@ export function printHelp(version) {
   ].join("\n"));
 }
 
-export function printTargets() {
-  console.log(c.bold + "CtxLab — Target Profiles & Safe Budgets" + c.reset + "\n");
+export function printTargets(version) {
+  const ver = version ? " " + c.dim + "v" + version + c.reset : "";
+  console.log(c.bold + c.cyan + "Context Lab" + c.reset + ver + " — Target Profiles & Safe Budgets\n");
   const rows = Object.values(TARGET_PROFILES).map(function (profile) {
     return [
       c.cyan + profile.id.padEnd(10) + c.reset,

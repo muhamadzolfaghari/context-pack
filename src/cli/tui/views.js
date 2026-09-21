@@ -41,9 +41,10 @@ export function renderProgressBar(usedTokens, maxBudget, barWidth) {
 export function renderTargetSelector(state, version) {
   const cols = Math.max(60, process.stdout.columns || 80);
   const sep = c.dim + "─".repeat(Math.min(cols, 80)) + c.reset;
+  const ver = version ? "v" + version : "v1.3.0";
 
   console.log("");
-  console.log("  " + c.bold + c.cyan + "◆ CONTEXT PACK" + c.reset + " " + c.dim + "v" + version + " — Select Target LLM" + c.reset);
+  console.log("  " + c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + "Select Target LLM" + c.reset);
   console.log("  " + c.dim + "Picks safe token budgets optimized for each provider's context limits." + c.reset);
   console.log("  " + sep);
   console.log(
@@ -80,13 +81,14 @@ export function renderTargetSelector(state, version) {
   console.log("  " + c.dim + "↑/↓ or 1-" + state.targetChoices.length + " choose  ·  " + c.reset + c.bold + "Enter" + c.reset + c.dim + " continue  ·  " + c.reset + c.bold + "q" + c.reset + c.dim + " quit" + c.reset + "\n");
 }
 
-export function renderBudgetSelector(state) {
+export function renderBudgetSelector(state, version) {
   const BUDGET_LIST = [8000, 16000, 32000, 64000, 128000, 256000, 500000, 1000000];
   const cols = Math.max(60, process.stdout.columns || 80);
   const sep = c.dim + "─".repeat(Math.min(cols, 80)) + c.reset;
+  const ver = version ? "v" + version : "v1.3.0";
 
   console.log("");
-  console.log("  " + c.bold + c.cyan + "◆ CONTEXT PACK" + c.reset + " — " + c.bold + "Custom Token Budget" + c.reset);
+  console.log("  " + c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + "Custom Token Budget" + c.reset);
   console.log("  " + c.dim + "Select token capacity or press Esc to return to targets." + c.reset);
   console.log("  " + sep);
 
@@ -108,26 +110,28 @@ export function renderBudgetSelector(state) {
   console.log("  " + c.dim + "↑/↓ or 1-" + BUDGET_LIST.length + " select  ·  " + c.reset + c.bold + "Enter" + c.reset + c.dim + " continue  ·  " + c.reset + c.bold + "Esc" + c.reset + c.dim + " back" + c.reset + "\n");
 }
 
-export function renderFocusModal(state) {
+export function renderFocusModal(state, version) {
   const cols = Math.max(60, process.stdout.columns || 80);
   const sep = c.dim + "─".repeat(Math.min(cols, 80)) + c.reset;
+  const ver = version ? "v" + version : "v1.3.0";
 
   console.log("");
-  console.log("  " + c.bold + c.cyan + "◆ CONTEXT PACK" + c.reset + " — " + c.bold + "Set Task Focus Prompt" + c.reset);
+  console.log("  " + c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + "Set Task Focus Prompt" + c.reset);
   console.log("  " + c.dim + "Enter a description of what you want the LLM to achieve." + c.reset);
-  console.log("  " + c.dim + "CtxLab ranks and pulls dependencies and tests based on this prompt." + c.reset);
+  console.log("  " + c.dim + "Context Lab ranks and pulls dependencies and tests based on this prompt." + c.reset);
   console.log("  " + sep);
   console.log("  " + c.bold + "Prompt:" + c.reset + " " + c.cyan + (state.focusInput || c.dim + "(type your task, e.g. refactor auth flow and update tests)" + c.reset) + c.bold + "█" + c.reset);
   console.log("  " + sep);
   console.log("  " + c.bold + "Enter" + c.reset + c.dim + " save  ·  " + c.reset + c.bold + "Esc" + c.reset + c.dim + " cancel / clear" + c.reset + "\n");
 }
 
-export function renderRestoreModal(state) {
+export function renderRestoreModal(state, version) {
   const cols = Math.max(60, process.stdout.columns || 80);
   const sep = c.dim + "─".repeat(Math.min(cols, 80)) + c.reset;
+  const ver = version ? "v" + version : "v1.3.0";
 
   console.log("");
-  console.log("  " + c.bold + c.cyan + "◆ CONTEXT PACK" + c.reset + " — " + c.bold + "Apply AI Response From Clipboard" + c.reset);
+  console.log("  " + c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + "Apply AI Response From Clipboard" + c.reset);
 
   if (state.applyPlan && state.applyPlan.length > 0) {
     console.log("  " + c.dim + "Detected " + state.applyPlan.length + " file modifications from chatbot response:" + c.reset);
@@ -163,12 +167,13 @@ export function renderRestoreModal(state) {
   console.log("");
 }
 
-export function renderDoneModal(state) {
+export function renderDoneModal(state, version) {
   const cols = Math.max(60, process.stdout.columns || 80);
   const sep = c.dim + "─".repeat(Math.min(cols, 80)) + c.reset;
+  const ver = version ? "v" + version : "v1.3.0";
 
   console.log("");
-  console.log("  " + c.bold + c.green + "✔ CtxLab Built Successfully!" + c.reset);
+  console.log("  " + c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + c.green + "✔ Pack Built Successfully!" + c.reset);
   console.log("  " + sep);
   if (state.builtPack) {
     console.log("  " + padEnd(c.dim + "Files Selected:" + c.reset, 24) + c.bold + state.builtPack.selectedCount + c.reset + " / " + state.builtPack.candidateCount + " scanned");
@@ -185,10 +190,11 @@ export function renderDoneModal(state) {
   console.log("  " + c.bold + "Enter / Esc" + c.reset + c.dim + " return to browser  ·  " + c.reset + c.bold + "c" + c.reset + c.dim + " copy again  ·  " + c.reset + c.bold + "q" + c.reset + c.dim + " quit" + c.reset + "\n");
 }
 
-export function renderPreview(state) {
+export function renderPreview(state, version) {
   const cols = Math.max(60, process.stdout.columns || 80);
   const rows = Math.max(16, process.stdout.rows || 24);
   const sep = c.dim + "─".repeat(Math.min(cols, 90)) + c.reset;
+  const ver = version ? "v" + version : "v1.3.0";
 
   if (!state.previewItem) {
     state.mode = "browse";
@@ -196,12 +202,12 @@ export function renderPreview(state) {
   }
 
   const isFile = state.previewItem.type === "file";
-  const title = isFile
-    ? c.bold + c.cyan + "◆ Preview: " + c.reset + state.previewItem.rel + c.dim + " (" + state.previewLines.length + " lines · " + formatBytes(state.previewItem.bytes) + " · ~" + formatTokens(state.previewItem.tokens) + " tok)" + c.reset
-    : c.bold + c.cyan + "◆ Folder Contents: " + c.reset + state.previewItem.rel + "/" + c.dim + " (" + state.previewItem.count + " files · ~" + formatTokens(state.previewItem.tokens) + " tok)" + c.reset;
+  const itemInfo = isFile
+    ? state.previewItem.rel + c.dim + " (" + state.previewLines.length + " lines · " + formatBytes(state.previewItem.bytes) + " · ~" + formatTokens(state.previewItem.tokens) + " tok)" + c.reset
+    : state.previewItem.rel + "/" + c.dim + " (" + state.previewItem.count + " files · ~" + formatTokens(state.previewItem.tokens) + " tok)" + c.reset;
 
   console.log("");
-  console.log("  " + title);
+  console.log("  " + c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + (isFile ? "Preview: " : "Folder Contents: ") + c.reset + itemInfo);
   console.log("  " + sep);
 
   const viewHeight = Math.max(8, rows - 7);
@@ -233,9 +239,10 @@ export function renderBrowse(state, visible, version) {
   const budget = currentBudget(state);
   const est = selectedSeedEstimate(state);
   const targetLabel = state.activeTarget ? state.activeTarget : "custom (" + formatTokens(budget) + ")";
+  const ver = version ? "v" + version : "v1.3.0";
 
   // Header Title Bar
-  const title = c.bold + c.cyan + "◆ CONTEXT PACK" + c.reset + " " + c.dim + "v" + version + c.reset;
+  const title = c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset;
   const targetBadge = c.dim + "Target: " + c.reset + c.cyan + targetLabel + c.reset;
   const formatBadge = c.dim + "Format: " + c.reset + c.bold + state.format + c.reset;
   console.log("  " + title + "  " + c.dim + "│" + c.reset + "  " + targetBadge + "  " + c.dim + "│" + c.reset + "  " + formatBadge);

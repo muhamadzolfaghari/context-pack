@@ -4,20 +4,23 @@ import { handleApplyCommand } from "./commands/apply.js";
 import { handleRevertCommand } from "./commands/revert.js";
 import { startInteractive } from "./tui/interactive.js";
 
+const DEFAULT_VERSION = "1.3.0";
+
 export function runCli(argv, version, root) {
   const ROOT = root || process.cwd();
+  const currentVersion = version || DEFAULT_VERSION;
   const options = parseArgs(argv, ROOT);
 
   if (options.help) {
-    printHelp(version);
+    printHelp(currentVersion);
     return;
   }
   if (options.version) {
-    console.log(version);
+    console.log(currentVersion);
     return;
   }
   if (options.listTargets) {
-    printTargets();
+    printTargets(currentVersion);
     return;
   }
 
@@ -36,5 +39,5 @@ export function runCli(argv, version, root) {
     return;
   }
 
-  startInteractive(options, ROOT, version);
+  startInteractive(options, ROOT, currentVersion);
 }

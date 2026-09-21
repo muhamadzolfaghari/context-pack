@@ -31,7 +31,7 @@ export function startInteractive(options, root, version) {
   function render() {
     clear();
     if (state.mode === "preview") {
-      renderPreview(state);
+      renderPreview(state, version);
       return;
     }
     if (state.mode === "target") {
@@ -39,19 +39,19 @@ export function startInteractive(options, root, version) {
       return;
     }
     if (state.mode === "budget") {
-      renderBudgetSelector(state);
+      renderBudgetSelector(state, version);
       return;
     }
     if (state.mode === "focus") {
-      renderFocusModal(state);
+      renderFocusModal(state, version);
       return;
     }
     if (state.mode === "restore") {
-      renderRestoreModal(state);
+      renderRestoreModal(state, version);
       return;
     }
     if (state.mode === "done") {
-      renderDoneModal(state);
+      renderDoneModal(state, version);
       return;
     }
     renderBrowse(state, getVisibleItems(state), version);

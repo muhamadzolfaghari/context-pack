@@ -27,7 +27,7 @@ export function handleApplyCommand(source, options, root) {
     return result;
   }
 
-  console.log(c.bold + "CtxLab — Apply AI Response" + (dryRun ? " [DRY RUN]" : "") + c.reset + "\n");
+  console.log(c.bold + c.cyan + "◆ Context Lab" + c.reset + " — " + c.bold + "Apply AI Response" + (dryRun ? " [DRY RUN]" : "") + c.reset + "\n");
   for (const item of result.plan) {
     let tag = c.dim + "[UNCHANGED]" + c.reset;
     let delta = c.dim + item.lines + " lines" + c.reset;
