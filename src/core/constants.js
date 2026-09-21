@@ -82,7 +82,7 @@ export function formatTokens(tokens) {
 }
 
 export const DEFAULT_IGNORES = [
-  "node_modules", ".git", ".contextpack", "dist", "build", "coverage", ".next", ".nuxt",
+  "node_modules", ".git", ".ctxlab", "dist", "build", "coverage", ".next", ".nuxt",
   ".turbo", ".cache", ".vercel", ".netlify", ".env", ".env.*", "*.lock",
   "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "*.map", "*.min.js",
   "*.min.css", "*.log", "*.tsbuildinfo", ".npmrc", ".pypirc", ".netrc",
