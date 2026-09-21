@@ -57,7 +57,7 @@ export function applyDump(input, root, options) {
   const plan = [];
   const backups = [];
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupDir = path.join(absRoot, ".contextpack", "backups", timestamp);
+  const backupDir = path.join(absRoot, ".ctxlab", "backups", timestamp);
 
   for (const [rawPath, info] of Object.entries(pack.files)) {
     const rel = safeRel(rawPath);
@@ -162,8 +162,8 @@ export function applyDump(input, root, options) {
 
 export function revertDump(root, timestamp) {
   const absRoot = path.resolve(root);
-  const backupsBase = path.join(absRoot, ".contextpack", "backups");
-  if (!fs.existsSync(backupsBase)) throw new Error("No backups found in .contextpack/backups");
+  const backupsBase = path.join(absRoot, ".ctxlab", "backups");
+  if (!fs.existsSync(backupsBase)) throw new Error("No backups found in .ctxlab/backups");
 
   let targetTimestamp = timestamp;
   if (!targetTimestamp) {
