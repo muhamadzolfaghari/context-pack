@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: context-pack-quality-${{ github.ref }}
+  group: ctxlab-quality-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
