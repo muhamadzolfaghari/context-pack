@@ -161,7 +161,7 @@ export function startInteractive(options, root, version) {
         try {
           const result = applyDump(state.applyRaw, ROOT, { backup: true, overwrite: true });
           state.message = c.green + "✔ Successfully applied " + result.appliedCount + " files to project!" + c.reset +
-            (result.backupDir ? "\n  " + c.dim + "Backup saved to: " + path.relative(ROOT, result.backupDir) + " (Run 'context-pack revert' to undo)" + c.reset : "");
+            (result.backupDir ? "\n  " + c.dim + "Backup saved to: " + path.relative(ROOT, result.backupDir) + " (Run 'ctxlab revert' to undo)" + c.reset : "");
           state.builtPack = null;
           state.applyPlan = null;
           state.applyRaw = null;
