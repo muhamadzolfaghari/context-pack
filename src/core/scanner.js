@@ -29,7 +29,7 @@ export function createIgnoreMatcher(patterns) {
 
 export function loadIgnorePatterns(root, extra) {
   const patterns = DEFAULT_IGNORES.concat(extra || []);
-  for (const name of [".gitignore", ".contextpackignore"]) {
+  for (const name of [".gitignore", ".ctxlabignore"]) {
     try {
       const text = fs.readFileSync(path.join(root, name), "utf8");
       for (const line of text.split(/\r?\n/)) {
@@ -78,7 +78,7 @@ export function scanProject(root, options) {
   const stack = [absRoot];
 
   const useCache = options.cache !== false;
-  const cacheDir = path.join(absRoot, ".contextpack");
+  const cacheDir = path.join(absRoot, ".ctxlab");
   const cacheFile = path.join(cacheDir, "cache.json");
   let oldCache = null;
   if (useCache) {
