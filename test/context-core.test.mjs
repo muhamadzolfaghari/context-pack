@@ -16,7 +16,10 @@ import {
   restorePack,
   scanProject,
   loadProjectPresets,
-  redactSecrets
+  redactSecrets,
+  applyDump,
+  parseAiResponse,
+  revertDump
 } from "../bin/context-core.mjs";
 
 function fixture(files) {
@@ -290,3 +293,117 @@ test("scanProject uses incremental cache on unchanged files", function () {
   assert.equal(scan2.files.length, 2);
   assert.deepEqual(scan2.files.map(x => x.path), ["src/a.js", "src/b.js"]);
 });
+
+test("parseAiResponse extracts files across diverse chatbot markdown patterns", function () {
+  const sample = [
+    "# AI Response",
+    "",
+    "## src/auth/login.js",
+    "```javascript",
+    "export function login() { return true; }",
+    "```",
+    "",
+    "### `src/utils/token.ts`",
+    "Here is the token helper function:",
+    "```typescript",
+    "export const sign = (x: string) => x;",
+    "```",
+    "",
+    "**File: config/app.json**",
+    "```json",
+    "{\"name\": \"app\"}",
+    "```",
+    "",
+    "```python",
+    "# scripts/worker.py",
+    "def run():",
+    "    pass",
+    "```"
+  ].join("\n");
+
+  const parsed = parseAiResponse(sample);
+  assert.ok(parsed.files["src/auth/login.js"]);
+  assert.equal(parsed.files["src/auth/login.js"].content, "export function login() { return true; }\n");
+
+  assert.ok(parsed.files["src/utils/token.ts"]);
+  assert.equal(parsed.files["src/utils/token.ts"].content, "export const sign = (x: string) => x;\n");
+
+  assert.ok(parsed.files["config/app.json"]);
+  assert.equal(parsed.files["config/app.json"].content, "{\"name\": \"app\"}\n");
+
+  assert.ok(parsed.files["scripts/worker.py"]);
+  assert.equal(parsed.files["scripts/worker.py"].content, "def run():\n    pass\n");
+});
+
+test("applyDump dry-run computes accurate diff plan without modifying files", function () {
+  const root = fixture({
+    "src/existing.js": "const a = 1;\nconst b = 2;\n",
+    "src/identical.js": "const identical = true;\n"
+  });
+
+  const response = [
+    "## src/existing.js",
+    "```javascript",
+    "const a = 1;\nconst b = 2;\nconst c = 3;\n",
+    "```",
+    "",
+    "## src/identical.js",
+    "```javascript",
+    "const identical = true;\n",
+    "```",
+    "",
+    "## src/new-file.js",
+    "```javascript",
+    "export const brandNew = true;\n",
+    "```"
+  ].join("\n");
+
+  const dryResult = applyDump(response, root, { dryRun: true });
+  assert.equal(dryResult.dryRun, true);
+  assert.equal(dryResult.createdCount, 1);
+  assert.equal(dryResult.updatedCount, 1);
+  assert.equal(dryResult.unchangedCount, 1);
+
+  // Files should not have changed
+  assert.equal(fs.existsSync(path.join(root, "src/new-file.js")), false);
+  assert.equal(fs.readFileSync(path.join(root, "src/existing.js"), "utf8"), "const a = 1;\nconst b = 2;\n");
+});
+
+test("applyDump updates exact files, creates safety backup, and revertDump restores them", function () {
+  const root = fixture({
+    "src/index.js": "original code line 1\noriginal code line 2\n"
+  });
+
+  const response = [
+    "## src/index.js",
+    "```javascript",
+    "updated code line 1\nupdated code line 2\nupdated code line 3\n",
+    "```",
+    "",
+    "## src/component.js",
+    "```javascript",
+    "export const Comp = () => null;\n",
+    "```"
+  ].join("\n");
+
+  const applyResult = applyDump(response, root);
+  assert.equal(applyResult.dryRun, false);
+  assert.equal(applyResult.appliedCount, 2);
+  assert.equal(applyResult.createdCount, 1);
+  assert.equal(applyResult.updatedCount, 1);
+  assert.ok(applyResult.backupDir);
+  assert.ok(fs.existsSync(applyResult.backupDir));
+
+  // Verify file updates on disk
+  assert.equal(fs.readFileSync(path.join(root, "src/index.js"), "utf8"), "updated code line 1\nupdated code line 2\nupdated code line 3\n");
+  assert.equal(fs.readFileSync(path.join(root, "src/component.js"), "utf8"), "export const Comp = () => null;\n");
+
+  // Revert the dump using revertDump
+  const revertResult = revertDump(root);
+  assert.equal(revertResult.timestamp, applyResult.timestamp);
+  assert.deepEqual(revertResult.reverted, ["src/index.js"]);
+
+  // Verify original content is restored
+  assert.equal(fs.readFileSync(path.join(root, "src/index.js"), "utf8"), "original code line 1\noriginal code line 2\n");
+});
+

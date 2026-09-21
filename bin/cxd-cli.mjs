@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import {
   DEFAULT_BUDGET,
   TARGET_PROFILES,
+  applyDump,
   buildSmartPack,
   formatTokens,
   loadProjectPresets,
@@ -14,6 +15,7 @@ import {
   redactSecrets,
   renderMarkdown,
   restorePack,
+  revertDump,
   scanProject
 } from "./context-core.mjs";
 
@@ -74,8 +76,10 @@ function help() {
     c.bold + "context-pack " + VERSION + c.reset + " — Smart, token-budgeted repository context packer for LLMs",
     "",
     c.bold + "Usage:" + c.reset,
-    "  context-pack [paths...] [options]",
-    "  cxd [paths...] [options]",
+    "  cxd [paths...] [options]            Interactive explorer or export pack",
+    "  cxd dump [paths...] [options]       Export dump with AI Assistant Instructions protocol",
+    "  cxd apply [file] [options]          Apply AI response (from clipboard or file) to project",
+    "  cxd revert [timestamp]              Revert changes from a previous backup",
     "",
     c.bold + "Options:" + c.reset,
     "  --focus, --task <text>   Focus description used for smart relevance",
@@ -89,6 +93,8 @@ function help() {
     "  --copy                   Copy output to the clipboard",
     "  --redact                 Mask API keys, tokens, and private credentials",
     "  --no-cache               Bypass .contextpack/cache.json",
+    "  --dry-run                Preview changes without writing files (for apply)",
+    "  --no-backup              Skip automatic safety backup before applying",
     "  --depth <n>              Local dependency expansion depth (default: 4)",
     "  --impact-depth <n>       Reverse-dependency impact depth (default: 1)",
     "  --changed                Prioritize staged, unstaged, and untracked files",
@@ -96,38 +102,51 @@ function help() {
     "  --max-file-bytes <n>     Skip larger files (default: 1000000)",
     "  --ignore <pattern>       Add ignore pattern; repeatable",
     "  --restore <file.json>    Safely restore a JSON or Markdown pack",
-    "  --overwrite              Allow restore to replace existing files",
+    "  --overwrite, -y          Allow restore or apply to replace existing files",
     "  --version, -v            Print version",
     "  --help, -h               Show help",
     "",
     c.bold + "Examples:" + c.reset,
-    "  context-pack src/auth --focus \"refresh token flow\" --budget 32k --stdout",
-    "  context-pack --preset review --copy",
-    "  context-pack --target chatgpt --redact --copy",
-    "  context-pack src api --focus \"checkout request lifecycle\" -o context.md",
-    "  context-pack --target chatgpt --focus \"application architecture\" --copy",
-    "  context-pack --target claude --focus \"large refactor context\" -o context.md",
-    "  context-pack --target deepseek --changed --focus \"review current work\" --stdout",
-    "  context-pack --changed --focus \"review current work\" --budget 32k --stdout",
-    "  context-pack --since origin/main --focus \"impact of this branch\" -o context.md",
-    "  context-pack --restore"
+    "  cxd dump src/auth --focus \"login flow\" --copy",
+    "  cxd apply                           # Parse clipboard & update project files",
+    "  cxd apply response.md --dry-run     # Preview proposed changes",
+    "  cxd revert                          # Restore files from latest backup",
+    "  cxd --preset review --copy",
+    "  cxd --target chatgpt --redact --copy",
+    "  cxd --restore"
   ].join("\n"));
 }
 
 function parseArgs(argv) {
   const options = {
-    seeds: [], ignore: [], format: "markdown", budget: null, target: null,
+    command: null, seeds: [], ignore: [], format: "markdown", budget: null, target: null,
     dependencyDepth: 4, reverseDependencyDepth: 1, maxFileBytes: 1000000, focus: "",
     stdout: false, copy: false, output: null, restore: null, overwrite: false,
-    changed: false, since: null, preset: null, redact: false, cache: true
+    changed: false, since: null, preset: null, redact: false, cache: true,
+    dryRun: false, backup: true, applySource: null, revertTimestamp: null
   };
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
+  let args = argv.slice();
+  if (args.length > 0 && !args[0].startsWith("-")) {
+    const sub = args[0].toLowerCase();
+    if (sub === "dump") {
+      options.command = "dump";
+      args = args.slice(1);
+    } else if (sub === "apply" || sub === "import") {
+      options.command = "apply";
+      args = args.slice(1);
+    } else if (sub === "revert") {
+      options.command = "revert";
+      args = args.slice(1);
+    }
+  }
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
     const next = function () {
       i++;
-      if (argv[i] === undefined) throw new Error("Missing value for " + arg);
-      return argv[i];
+      if (args[i] === undefined) throw new Error("Missing value for " + arg);
+      return args[i];
     };
 
     if (arg === "--help" || arg === "-h") options.help = true;
@@ -136,6 +155,8 @@ function parseArgs(argv) {
     else if (arg === "--preset" || arg === "-p") options.preset = next();
     else if (arg === "--redact") options.redact = true;
     else if (arg === "--no-cache") options.cache = false;
+    else if (arg === "--dry-run") options.dryRun = true;
+    else if (arg === "--no-backup") options.backup = false;
     else if (arg === "--version" || arg === "-v") options.version = true;
     else if (arg === "--focus" || arg === "--task") options.focus = next();
     else if (arg === "--budget") options.budget = parseBudget(next());
@@ -152,16 +173,31 @@ function parseArgs(argv) {
     else if (arg === "--since") options.since = next();
     else if (arg === "--max-file-bytes") options.maxFileBytes = Math.max(1, Number.parseInt(next(), 10));
     else if (arg === "--ignore") options.ignore.push(next());
-    else if (arg === "--restore") {
-      if (argv[i + 1] && !argv[i + 1].startsWith("-")) {
+    else if (arg === "--apply" || arg === "--import") {
+      options.command = "apply";
+      if (args[i + 1] && !args[i + 1].startsWith("-")) options.applySource = next();
+    } else if (arg === "--revert") {
+      options.command = "revert";
+      if (args[i + 1] && !args[i + 1].startsWith("-")) options.revertTimestamp = next();
+    } else if (arg === "--restore") {
+      if (args[i + 1] && !args[i + 1].startsWith("-")) {
         options.restore = next();
       } else {
         options.restore = "clipboard";
       }
+    } else if (arg === "--overwrite" || arg === "--yes" || arg === "-y") {
+      options.overwrite = true;
+    } else if (arg.startsWith("-")) {
+      throw new Error("Unknown option: " + arg);
+    } else {
+      if (options.command === "apply" && !options.applySource) {
+        options.applySource = arg;
+      } else if (options.command === "revert" && !options.revertTimestamp) {
+        options.revertTimestamp = arg;
+      } else {
+        options.seeds.push(arg);
+      }
     }
-    else if (arg === "--overwrite") options.overwrite = true;
-    else if (arg.startsWith("-")) throw new Error("Unknown option: " + arg);
-    else options.seeds.push(arg);
   }
 
   if (options.preset) {
@@ -259,7 +295,77 @@ function renderOutput(pack, format) {
   return format === "json" ? JSON.stringify(pack, null, 2) + "\n" : renderMarkdown(pack);
 }
 
+function runApplyCommand(source, options) {
+  let raw;
+  if (source && source !== "clipboard" && source !== "-") {
+    raw = fs.readFileSync(path.resolve(source), "utf8");
+  } else {
+    raw = readClipboard();
+    if (!raw) {
+      throw new Error("Clipboard is empty. Copy ChatGPT's response with code blocks first or specify a file path (e.g. cxd apply response.md).");
+    }
+  }
+
+  const dryRun = Boolean(options.dryRun);
+  const result = applyDump(raw, ROOT, {
+    dryRun: dryRun,
+    backup: options.backup !== false,
+    overwrite: true
+  });
+
+  if (result.plan.length === 0) {
+    console.log(c.yellow + "No valid file modifications found in input." + c.reset);
+    return;
+  }
+
+  console.log(c.bold + "Context Pack — Apply AI Response" + (dryRun ? " [DRY RUN]" : "") + c.reset + "\n");
+  for (const item of result.plan) {
+    let tag = c.dim + "[UNCHANGED]" + c.reset;
+    let delta = c.dim + item.lines + " lines" + c.reset;
+    if (item.status === "create") {
+      tag = c.bold + c.green + "[CREATE]   " + c.reset;
+      delta = c.green + "+" + item.lines + " lines" + c.reset;
+    } else if (item.status === "update") {
+      tag = c.bold + c.yellow + "[UPDATE]   " + c.reset;
+      delta = c.yellow + "+" + item.additions + ", -" + item.deletions + " lines" + c.reset;
+    }
+    console.log("  " + tag + " " + padEnd(item.path, 40) + " " + delta);
+  }
+
+  console.log("");
+  if (dryRun) {
+    console.log(c.cyan + "Dry run complete: " + result.createdCount + " to create, " + result.updatedCount + " to update, " + result.unchangedCount + " unchanged." + c.reset);
+    console.log(c.dim + "Run without --dry-run to apply these changes to your project." + c.reset);
+  } else {
+    console.log(c.bold + c.green + "✔ Successfully applied " + result.appliedCount + " files (" +
+      result.createdCount + " created, " + result.updatedCount + " updated)." + c.reset);
+    if (result.backupDir) {
+      const relBackup = path.relative(ROOT, result.backupDir);
+      console.log(c.dim + "Safety backup saved to: " + relBackup + c.reset);
+      console.log(c.dim + "To revert changes anytime: cxd revert " + result.timestamp + c.reset);
+    }
+  }
+}
+
+function runRevertCommand(timestamp) {
+  const result = revertDump(ROOT, timestamp);
+  console.log(c.bold + c.green + "✔ Successfully reverted " + result.reverted.length + " files from backup (" + result.timestamp + "):" + c.reset);
+  for (const file of result.reverted) {
+    console.log("  " + c.cyan + "↺ " + file + c.reset);
+  }
+}
+
 function runNonInteractive(options) {
+  if (options.command === "apply") {
+    runApplyCommand(options.applySource || "clipboard", options);
+    return;
+  }
+
+  if (options.command === "revert") {
+    runRevertCommand(options.revertTimestamp);
+    return;
+  }
+
   if (options.restore) {
     let raw;
     if (options.restore === "clipboard" || options.restore === "clip" || options.restore === true || options.restore === "-") {
@@ -274,6 +380,10 @@ function runNonInteractive(options) {
     return;
   }
 
+  if (options.command === "dump" && !options.output && !options.stdout) {
+    options.copy = true;
+  }
+
   const pack = buildSmartPack({
     root: ROOT,
     seeds: options.seeds,
@@ -284,7 +394,8 @@ function runNonInteractive(options) {
     reverseDependencyDepth: options.reverseDependencyDepth,
     changedFiles: collectChangedFiles(options),
     maxFileBytes: options.maxFileBytes,
-    ignore: options.ignore
+    ignore: options.ignore,
+    redact: options.redact
   });
   const output = renderOutput(pack, options.format);
 
@@ -299,6 +410,11 @@ function runNonInteractive(options) {
   if (options.output || options.copy) {
     console.error("Context pack: " + pack.selectedCount + "/" + pack.candidateCount + " files, " +
       formatTokens(pack.totalTokens) + "/" + formatTokens(pack.budget) + " tokens.");
+    if (options.command === "dump" && options.copy) {
+      console.error(c.bold + c.green + "✔ Context dump copied to clipboard with AI Assistant instructions!" + c.reset);
+      console.error(c.dim + "1. Paste into ChatGPT, Claude, or DeepSeek." + c.reset);
+      console.error(c.dim + "2. Once the chatbot responds, copy its response and run: cxd apply" + c.reset);
+    }
   }
 }
 
@@ -351,6 +467,8 @@ function startInteractive() {
   let message = "";
   let builtPack = null;
   let focusInput = "";
+  let applyPlan = null;
+  let applyRaw = null;
 
   function canShow(rel) {
     if (fileSet.has(rel)) return true;
@@ -712,14 +830,40 @@ function startInteractive() {
     const sep = c.dim + "─".repeat(Math.min(cols, 80)) + c.reset;
 
     console.log("");
-    console.log("  " + c.bold + c.cyan + "◆ CONTEXT PACK" + c.reset + " — " + c.bold + "Restore Files From Clipboard" + c.reset);
-    console.log("  " + c.dim + "Recreates and pastes files into your project from clipboard (supports Markdown & JSON)." + c.reset);
-    console.log("  " + sep);
-    console.log("  " + c.bold + "Enter" + c.reset + ": restore new files (preserves existing files)");
-    console.log("  " + c.bold + "o" + c.reset + "    : restore with " + c.yellow + "OVERWRITE" + c.reset + " (replaces existing project files)");
-    console.log("  " + c.bold + "Esc" + c.reset + "  : back to explorer");
-    if (message) console.log("\n  " + c.yellow + message + c.reset);
-    console.log("  " + sep + "\n");
+    console.log("  " + c.bold + c.cyan + "◆ CONTEXT PACK" + c.reset + " — " + c.bold + "Apply AI Response From Clipboard" + c.reset);
+
+    if (applyPlan && applyPlan.length > 0) {
+      console.log("  " + c.dim + "Detected " + applyPlan.length + " file modifications from chatbot response:" + c.reset);
+      console.log("  " + sep);
+      for (const item of applyPlan.slice(0, 12)) {
+        let tag = c.dim + "[UNCHANGED]" + c.reset;
+        let delta = c.dim + item.lines + " lines" + c.reset;
+        if (item.status === "create") {
+          tag = c.bold + c.green + "[CREATE]   " + c.reset;
+          delta = c.green + "+" + item.lines + " lines" + c.reset;
+        } else if (item.status === "update") {
+          tag = c.bold + c.yellow + "[UPDATE]   " + c.reset;
+          delta = c.yellow + "+" + item.additions + ", -" + item.deletions + " lines" + c.reset;
+        }
+        console.log("  " + tag + " " + padEnd(item.path, 36) + " " + delta);
+      }
+      if (applyPlan.length > 12) {
+        console.log("  " + c.dim + "  ... and " + (applyPlan.length - 12) + " more files" + c.reset);
+      }
+      console.log("  " + sep);
+      console.log("  " + c.bold + "Enter / y" + c.reset + " : Apply changes to project (" + c.green + "creates automatic backup" + c.reset + ")");
+      console.log("  " + c.bold + "Esc" + c.reset + "       : Cancel and return to explorer");
+    } else {
+      console.log("  " + c.dim + "No valid file code blocks detected in clipboard." + c.reset);
+      console.log("  " + sep);
+      console.log("  " + c.bold + "1." + c.reset + " Ask ChatGPT, Claude, or DeepSeek for code changes.");
+      console.log("  " + c.bold + "2." + c.reset + " Copy the chatbot's response (Cmd+C / Ctrl+C).");
+      console.log("  " + c.bold + "3." + c.reset + " Press " + c.bold + "[r]" + c.reset + " again to preview and apply changes to your project.");
+      console.log("  " + sep);
+      if (message) console.log("  " + c.yellow + message + c.reset + "\n  " + sep);
+      console.log("  " + c.bold + "Esc" + c.reset + " : back to explorer");
+    }
+    console.log("");
   }
 
   function renderDoneModal() {
@@ -937,6 +1081,7 @@ function startInteractive() {
       c.bold + "[a]" + c.reset + " All",
       c.bold + "[c]" + c.reset + " Clear",
       c.bold + "[g]" + c.reset + " Git",
+      c.bold + "[r]" + c.reset + " Apply",
       c.bold + "[t]" + c.reset + " Target",
       c.bold + "[Ctrl+E]" + c.reset + " Build",
       c.bold + "[q]" + c.reset + " Quit"
@@ -1069,15 +1214,18 @@ function startInteractive() {
 
     // MODE: RESTORE
     if (mode === "restore") {
-      if (k === "escape") mode = "browse";
-      else if (k === "return" || k === "o") {
+      if (k === "escape") {
+        mode = "browse";
+        applyPlan = null;
+        applyRaw = null;
+      } else if ((k === "return" || k === "y") && applyPlan && applyPlan.length > 0 && applyRaw) {
         try {
-          const raw = readClipboard();
-          if (!raw) throw new Error("Clipboard is empty.");
-          const overwrite = k === "o";
-          const result = restorePack(raw, ROOT, { overwrite: overwrite });
-          message = "Restored " + result.restored.length + " files; skipped " + result.skipped.length +
-            (result.skipped.length && !overwrite ? " (press 'o' to overwrite existing files)." : ".");
+          const result = applyDump(applyRaw, ROOT, { backup: true, overwrite: true });
+          message = c.green + "✔ Successfully applied " + result.appliedCount + " files to project!" + c.reset +
+            (result.backupDir ? "\n  " + c.dim + "Backup saved to: " + path.relative(ROOT, result.backupDir) + " (Run 'cxd revert' to undo)" + c.reset : "");
+          builtPack = null;
+          applyPlan = null;
+          applyRaw = null;
           mode = "done";
         } catch (error) {
           message = error.message;
@@ -1270,6 +1418,23 @@ function startInteractive() {
     }
 
     if (k === "r") {
+      try {
+        const raw = readClipboard();
+        if (!raw) {
+          applyPlan = null;
+          applyRaw = null;
+          message = "Clipboard is empty. Copy ChatGPT's response first.";
+        } else {
+          const preview = applyDump(raw, ROOT, { dryRun: true });
+          applyPlan = preview.plan;
+          applyRaw = raw;
+          message = "";
+        }
+      } catch (err) {
+        applyPlan = null;
+        applyRaw = null;
+        message = err.message;
+      }
       mode = "restore";
       render();
       return;
@@ -1360,7 +1525,7 @@ try {
   if (options.help) help();
   else if (options.version) console.log(VERSION);
   else if (options.listTargets) printTargets();
-  else if (argv.length) runNonInteractive(options);
+  else if (options.command || argv.length) runNonInteractive(options);
   else startInteractive();
 } catch (error) {
   console.error("context-pack: " + error.message);
