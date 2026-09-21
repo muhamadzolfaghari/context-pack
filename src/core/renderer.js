@@ -30,7 +30,7 @@ export function renderMarkdown(pack, options) {
       "> " + fence + "language",
       "> <complete file contents>",
       "> " + fence,
-      "> This format allows 1-click automated import back into the repository via " + tick + "cxd apply" + tick + "."
+      "> This format allows 1-click automated import back into the repository via " + tick + "context-pack apply" + tick + " (or " + tick + "cxd apply" + tick + ")."
     );
   }
 

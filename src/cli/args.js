@@ -7,10 +7,11 @@ export function printHelp(version) {
     c.bold + "context-pack " + (version || "") + c.reset + " — Smart, token-budgeted repository context packer for LLMs",
     "",
     c.bold + "Usage:" + c.reset,
-    "  cxd [paths...] [options]            Interactive explorer or export pack",
-    "  cxd dump [paths...] [options]       Export dump with AI Assistant Instructions protocol",
-    "  cxd apply [file] [options]          Apply AI response (from clipboard or file) to project",
-    "  cxd revert [timestamp]              Revert changes from a previous backup",
+    "  context-pack [paths...] [options]            Interactive explorer or export pack",
+    "  context-pack dump [paths...] [options]       Export dump with AI Assistant Instructions protocol",
+    "  context-pack apply [file] [options]          Apply AI response (from clipboard or file) to project",
+    "  context-pack revert [timestamp]              Revert changes from a previous backup",
+    "  (Shorthand alias: " + c.cyan + "cxd" + c.reset + ")",
     "",
     c.bold + "Options:" + c.reset,
     "  --focus, --task <text>   Focus description used for smart relevance",
@@ -38,13 +39,14 @@ export function printHelp(version) {
     "  --help, -h               Show help",
     "",
     c.bold + "Examples:" + c.reset,
-    "  cxd dump src/auth --focus \"login flow\" --copy",
-    "  cxd apply                           # Parse clipboard & update project files",
-    "  cxd apply response.md --dry-run     # Preview proposed changes",
-    "  cxd revert                          # Restore files from latest backup",
-    "  cxd --preset review --copy",
-    "  cxd --target chatgpt --redact --copy",
-    "  cxd --restore"
+    "  context-pack dump src/auth --focus \"login flow\" --copy",
+    "  context-pack apply                           # Parse clipboard & update project files",
+    "  context-pack apply response.md --dry-run     # Preview proposed changes",
+    "  context-pack revert                          # Restore files from latest backup",
+    "  context-pack --preset review --copy",
+    "  context-pack --target chatgpt --redact --copy",
+    "  context-pack --restore",
+    "  cxd dump src/auth --copy                     # Shorthand alias"
   ].join("\n"));
 }
 

@@ -119,24 +119,27 @@ Easily export context to ChatGPT, Claude, or DeepSeek, and apply the chatbot's c
 
 ```bash
 # 1. Export context dump with AI Assistant Instructions protocol (copied to clipboard)
-cxd dump src/auth --focus "refresh token flow" --copy
+context-pack dump src/auth --focus "refresh token flow" --copy
 
 # 2. Paste into ChatGPT / Claude. Once the chatbot responds with code blocks, copy its response.
 
 # 3. Apply changes directly to your project (previews diff and creates automatic backup)
-cxd apply
+context-pack apply
 
 # Optional: preview proposed changes without writing files
-cxd apply --dry-run
+context-pack apply --dry-run
 
 # Optional: apply from a saved markdown or patch file
-cxd apply response.md
+context-pack apply response.md
 
 # Undo/revert applied changes anytime from the safety backup
-cxd revert
+context-pack revert
+
+# (Shorthand alias: 'cxd' works identically for all commands)
+cxd apply
 ```
 
-In the interactive CLI (`cxd`):
+In the interactive CLI (`context-pack` or `cxd`):
 - Press **`Ctrl+E`** to build and copy your context pack.
 - When you receive the chatbot's response, press **`r`** to open the **Apply AI Response** modal: it displays a live diff preview table of all files to create, update, or keep unchanged, and applies them upon `Enter` with automated safety backup!
 
