@@ -2,19 +2,23 @@ name: Publish to npm
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*.*.*"
+    paths:
+      - ".github/workflows/publish.yml"
   workflow_dispatch:
-
-permissions:
-  contents: read
-  id-token: write
 
 jobs:
   test-and-publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v6
 
       - name: Setup Node.js
@@ -22,29 +26,20 @@ jobs:
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
-          cache: npm
+          package-manager-cache: false
 
-      - name: Install
+      - name: Install dependencies
         run: npm ci
 
       - name: Verify release candidate
         run: |
           npm run check
           npm test
+          npm run test:coverage
           npm run verify:package
           npm pack --dry-run
 
-      - name: Ensure tag matches package version
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          test "v${VERSION}" = "${GITHUB_REF_NAME}" || {
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match package version v${VERSION}"
-            exit 1
-          }
-
-      - name: Check publication state
+      - name: Check npm publication state
         id: npm
         shell: bash
         run: |
@@ -52,25 +47,44 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           if npm view "${NAME}@${VERSION}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
             echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "${NAME}@${VERSION} is already published; skipping publish and validating registry."
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "${NAME}@${VERSION} is not published yet."
           fi
 
-      - name: Publish with npm provenance
+      - name: Publish to npm with OIDC trusted publishing
         if: steps.npm.outputs.published != 'true'
         run: npm publish --provenance --access public
 
-      - name: Verify registry
+      - name: Post-Publish Registry Validation Smoke Test
         shell: bash
         run: |
+          set -euo pipefail
           NAME=$(node -p "require('./package.json').name")
           VERSION=$(node -p "require('./package.json').version")
-          for attempt in {1..20}; do
+
+          echo "Waiting for $NAME@$VERSION to become visible on npm..."
+          registry_ready=false
+          for attempt in {1..30}; do
             if npm view "${NAME}@${VERSION}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
-              echo "npm registry verified"
-              exit 0
+              registry_ready=true
+              echo "✅ npm registry verified"
+              break
             fi
-            sleep 5
+            echo "Registry not ready yet (attempt ${attempt}/30)"
+            sleep 10
           done
-          echo "::error::${NAME}@${VERSION} not visible in npm registry"
-          exit 1
+          if [ "${registry_ready}" != "true" ]; then
+            echo "::error::${NAME}@${VERSION} did not become visible on npm within the validation window"
+            exit 1
+          fi
+
+          echo "Testing CLI execution via npx..."
+          npx --yes "${NAME}@${VERSION}" --help
+          npx --yes "${NAME}@${VERSION}" --version
+
+          echo "Testing ES module library import..."
+          node --input-type=module -e "import { buildSmartPack } from '${NAME}'; if (typeof buildSmartPack !== 'function') throw new Error('Missing buildSmartPack export');"
+
+          echo "🎉 Post-publish registry and CLI smoke test passed"

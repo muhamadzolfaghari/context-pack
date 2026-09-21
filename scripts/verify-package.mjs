@@ -1,7 +1,7 @@
 import fs from "node:fs";
 
 const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
-const required = ["bin/context-core.mjs", "bin/cxd-cli.mjs", "README.md", "LICENSE"];
+const required = ["src/index.js", "bin/context-core.mjs", "bin/cxd-cli.mjs", "README.md", "LICENSE"];
 
 for (const file of required) {
   if (!fs.existsSync(file)) throw new Error("Missing publish file: " + file);
