@@ -12,4 +12,4 @@ Use GitHub Security Advisories for this repository and include the operating sys
 
 ## Security boundaries
 
-`context-pack` reads local project files selected by its scanner and can write files only during explicit restore operations. Restore rejects absolute paths and traversal outside the destination root and refuses existing symlink-parent traversal.
+`ctxlab` reads local project files selected by its scanner and can write files only during explicit restore operations. Restore rejects absolute paths and traversal outside the destination root and refuses existing symlink-parent traversal.
