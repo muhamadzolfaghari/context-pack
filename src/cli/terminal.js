@@ -20,8 +20,46 @@ export const c = {
   gray: isColor ? "\x1b[90m" : "",
   bgCyan: isColor ? "\x1b[46m" : "",
   bgBlue: isColor ? "\x1b[44m" : "",
-  bgGray: isColor ? "\x1b[100m" : ""
+  bgGray: isColor ? "\x1b[100m" : "",
+  // Enterprise modern palette tokens
+  emerald: isColor ? "\x1b[38;5;42m" : "",
+  amber: isColor ? "\x1b[38;5;214m" : "",
+  sky: isColor ? "\x1b[38;5;75m" : "",
+  slate: isColor ? "\x1b[38;5;244m" : "",
+  rose: isColor ? "\x1b[38;5;203m" : "",
+  violet: isColor ? "\x1b[38;5;141m" : "",
+  bgDark: isColor ? "\x1b[48;5;236m" : "",
+  bgSlate: isColor ? "\x1b[48;5;238m" : ""
 };
+
+export const BOX = {
+  tl: "╭",
+  tr: "╮",
+  bl: "╰",
+  br: "╯",
+  h: "─",
+  v: "│",
+  vl: "├",
+  vr: "┤",
+  ht: "┬",
+  hb: "┴",
+  x: "┼"
+};
+
+export function badge(text, fg, bg) {
+  if (!isColor) return "[" + text + "]";
+  const f = fg || c.white;
+  const b = bg || c.bgSlate;
+  return b + f + " " + text + " " + c.reset;
+}
+
+export function gitBranch() {
+  try {
+    return execFileSync("git", ["branch", "--show-current"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || "detached";
+  } catch {
+    return null;
+  }
+}
 
 export function stripAnsi(str) {
   return String(str || "").replace(/\x1b\[[0-9;]*m/g, "");

@@ -27,31 +27,32 @@ export function handleApplyCommand(source, options, root) {
     return result;
   }
 
-  console.log(c.bold + c.cyan + "◆ Context Lab" + c.reset + " — " + c.bold + "Apply AI Response" + (dryRun ? " [DRY RUN]" : "") + c.reset + "\n");
+  const headerTag = dryRun ? " " + c.bold + c.amber + "[DRY RUN PRE-FLIGHT]" + c.reset : "";
+  console.log(c.bold + c.cyan + "◆ Context Lab Enterprise" + c.reset + " — " + c.bold + "Apply AI Response" + headerTag + c.reset + "\n");
   for (const item of result.plan) {
     let tag = c.dim + "[UNCHANGED]" + c.reset;
     let delta = c.dim + item.lines + " lines" + c.reset;
     if (item.status === "create") {
-      tag = c.bold + c.green + "[CREATE]   " + c.reset;
-      delta = c.green + "+" + item.lines + " lines" + c.reset;
+      tag = c.bold + c.emerald + "[CREATE]   " + c.reset;
+      delta = c.emerald + "+" + item.lines + " lines" + c.reset;
     } else if (item.status === "update") {
-      tag = c.bold + c.yellow + "[UPDATE]   " + c.reset;
-      delta = c.yellow + "+" + item.additions + ", -" + item.deletions + " lines" + c.reset;
+      tag = c.bold + c.amber + "[UPDATE]   " + c.reset;
+      delta = c.amber + "+" + item.additions + ", -" + item.deletions + " lines" + c.reset;
     }
     console.log("  " + tag + " " + padEnd(item.path, 40) + " " + delta);
   }
 
   console.log("");
   if (dryRun) {
-    console.log(c.cyan + "Dry run complete: " + result.createdCount + " to create, " + result.updatedCount + " to update, " + result.unchangedCount + " unchanged." + c.reset);
-    console.log(c.dim + "Run without --dry-run to apply these changes to your project." + c.reset);
+    console.log(c.cyan + "Pre-flight audit complete: " + result.createdCount + " to create, " + result.updatedCount + " to update, " + result.unchangedCount + " unchanged." + c.reset);
+    console.log(c.dim + "Run without --dry-run to apply these changes directly to your project." + c.reset);
   } else {
-    console.log(c.bold + c.green + "✔ Successfully applied " + result.appliedCount + " files (" +
+    console.log(c.bold + c.emerald + "✔ Successfully applied " + result.appliedCount + " files (" +
       result.createdCount + " created, " + result.updatedCount + " updated)." + c.reset);
     if (result.backupDir) {
       const relBackup = path.relative(absRoot, result.backupDir);
-      console.log(c.dim + "Safety backup saved to: " + relBackup + c.reset);
-      console.log(c.dim + "To revert changes anytime: ctxlab revert " + result.timestamp + c.reset);
+      console.log(c.dim + "🛡️ Enterprise backup created: " + relBackup + c.reset);
+      console.log(c.dim + "To rollback changes anytime: ctxlab revert " + result.timestamp + c.reset);
     }
   }
 

@@ -407,3 +407,37 @@ test("applyDump updates exact files, creates safety backup, and revertDump resto
   assert.equal(fs.readFileSync(path.join(root, "src/index.js"), "utf8"), "original code line 1\noriginal code line 2\n");
 });
 
+test("renderMarkdown instructs chatbot to produce JSON suitable for apply --dry-run", function () {
+  const root = fixture({ "src/app.js": "console.log('app');\n" });
+  const pack = buildSmartPack({ root: root, seeds: ["src/app.js"], budget: 5000 });
+  const md = renderMarkdown(pack);
+  assert.match(md, /Instructions for AI Assistant/);
+  assert.match(md, /ctxlab apply --dry-run/);
+  assert.match(md, /"files":/);
+  assert.match(md, /"content":/);
+});
+
+test("parseAiResponse parses JSON within markdown code block and conversational text", function () {
+  const sample = [
+    "Sure! Here is the requested change in JSON format:",
+    "```json",
+    "{",
+    '  "files": {',
+    '    "src/utils.js": {',
+    '      "content": "export const add = (a, b) => a + b;\\n"',
+    "    },",
+    '    "src/config.json": "{\\"debug\\": true}"',
+    "  }",
+    "}",
+    "```",
+    "Run `ctxlab apply --dry-run` to inspect the plan."
+  ].join("\n");
+
+  const parsed = parseAiResponse(sample);
+  assert.ok(parsed.files["src/utils.js"]);
+  assert.equal(parsed.files["src/utils.js"].content, "export const add = (a, b) => a + b;\n");
+  assert.ok(parsed.files["src/config.json"]);
+  assert.equal(parsed.files["src/config.json"].content, '{"debug": true}\n');
+});
+
+

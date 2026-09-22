@@ -155,8 +155,15 @@ export function startInteractive(options, root, version) {
     if (state.mode === "restore") {
       if (k === "escape") {
         state.mode = "browse";
+        if (state.applyRaw) state.lastResponse = state.applyRaw;
         state.applyPlan = null;
         state.applyRaw = null;
+      } else if (k === "c" && state.applyRaw) {
+        if (writeClipboard(state.applyRaw)) {
+          state.message = c.bold + c.green + "✔ AI response copied to clipboard!" + c.reset;
+        }
+        render();
+        return;
       } else if ((k === "return" || k === "y") && state.applyPlan && state.applyPlan.length > 0 && state.applyRaw) {
         try {
           const result = applyDump(state.applyRaw, ROOT, { backup: true, overwrite: true });
@@ -164,6 +171,7 @@ export function startInteractive(options, root, version) {
             (result.backupDir ? "\n  " + c.dim + "Backup saved to: " + path.relative(ROOT, result.backupDir) + " (Run 'ctxlab revert' to undo)" + c.reset : "");
           state.builtPack = null;
           state.applyPlan = null;
+          state.lastResponse = state.applyRaw;
           state.applyRaw = null;
           state.mode = "done";
         } catch (error) {
@@ -177,7 +185,7 @@ export function startInteractive(options, root, version) {
     // MODE: DONE
     if (state.mode === "done") {
       if (k === "q") process.exit(0);
-      if (k === "c" && state.builtPack) {
+      if ((k === "c" || k === "y") && state.builtPack) {
         const output = state.format === "json" ? renderJson(state.builtPack) : renderMarkdown(state.builtPack);
         if (writeClipboard(output)) {
           state.message = c.green + "✔ Copied to clipboard again!" + c.reset;
@@ -353,6 +361,7 @@ export function startInteractive(options, root, version) {
           const preview = applyDump(raw, ROOT, { dryRun: true });
           state.applyPlan = preview.plan;
           state.applyRaw = raw;
+          state.lastResponse = raw;
           state.message = "";
         }
       } catch (err) {
@@ -361,6 +370,39 @@ export function startInteractive(options, root, version) {
         state.message = err.message;
       }
       state.mode = "restore";
+      render();
+      return;
+    }
+
+    if (k === "y" && !key.shift && str !== "Y") {
+      const pack = buildSmartPack({
+        root: ROOT,
+        seeds: Array.from(state.selected),
+        focus: state.focusPrompt,
+        target: state.activeTarget,
+        budget: state.activeTarget ? null : BUDGETS[state.budgetIndex],
+        redact: options && options.redact
+      });
+      state.builtPack = pack;
+      const output = state.format === "json" ? renderJson(pack) : renderMarkdown(pack);
+      const copied = writeClipboard(output);
+      state.message = copied
+        ? c.bold + c.green + "✔ Context pack copied to clipboard!" + c.reset + c.dim + " (" + pack.selectedCount + " files, " + formatTokens(pack.totalTokens) + " tokens)" + c.reset
+        : c.yellow + "Clipboard not available on this system." + c.reset;
+      render();
+      return;
+    }
+
+    if ((k === "y" && key.shift) || str === "Y") {
+      const resp = state.lastResponse || state.applyRaw;
+      if (resp) {
+        const copied = writeClipboard(resp);
+        state.message = copied
+          ? c.bold + c.green + "✔ AI response copied to clipboard!" + c.reset
+          : c.yellow + "Clipboard not available on this system." + c.reset;
+      } else {
+        state.message = c.yellow + "No AI response loaded yet. Press 'r' to read response from clipboard." + c.reset;
+      }
       render();
       return;
     }
@@ -392,8 +434,10 @@ export function startInteractive(options, root, version) {
 
     if (k === "up") {
       state.cursor = Math.max(0, state.cursor - 1);
+      state.message = "";
     } else if (k === "down") {
       state.cursor = Math.min(Math.max(0, visible.length - 1), state.cursor + 1);
+      state.message = "";
     } else if (k === "space") {
       const item = visible[state.cursor];
       if (item) toggleSelection(state, item);

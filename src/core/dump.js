@@ -2,20 +2,72 @@ import fs from "node:fs";
 import path from "node:path";
 import { safeRel, rejectSymlinkParents, isValidFilePath } from "../utils/path-safety.js";
 
+function normalizeJsonFiles(filesObj) {
+  if (!filesObj || typeof filesObj !== "object") return null;
+  const normalized = {};
+  for (const [rawPath, info] of Object.entries(filesObj)) {
+    const cleanPath = rawPath.replace(/^[./\\]+/, "");
+    if (!isValidFilePath(cleanPath)) continue;
+    if (typeof info === "string") {
+      normalized[cleanPath] = { content: info.endsWith("\n") ? info : info + "\n" };
+    } else if (info && typeof info.content === "string") {
+      normalized[cleanPath] = { content: info.content.endsWith("\n") ? info.content : info.content + "\n" };
+    }
+  }
+  if (Object.keys(normalized).length === 0) return null;
+  return normalized;
+}
+
 export function parseAiResponse(input) {
   if (!input) throw new Error("Empty response to parse");
   if (typeof input === "object" && input !== null && input.files && typeof input.files === "object") {
+    const norm = normalizeJsonFiles(input.files);
+    if (norm) return { ...input, schemaVersion: input.schemaVersion || 1, files: norm };
     return input;
   }
   const raw = String(input).trim();
+
+  // 1. Raw JSON string
   if (raw.startsWith("{")) {
     try {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object" && parsed.files && typeof parsed.files === "object") {
-        return parsed;
+        const norm = normalizeJsonFiles(parsed.files);
+        if (norm) return { ...parsed, schemaVersion: parsed.schemaVersion || 1, files: norm };
       }
     } catch {
-      // Fall through to markdown parser
+      // Fall through
+    }
+  }
+
+  // 2. JSON inside markdown codeblock: ```json ... ``` or ``` ... ```
+  const fenceRegex = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/g;
+  let fenceMatch;
+  while ((fenceMatch = fenceRegex.exec(raw)) !== null) {
+    try {
+      const parsed = JSON.parse(fenceMatch[1]);
+      if (parsed && typeof parsed === "object" && parsed.files && typeof parsed.files === "object") {
+        const norm = normalizeJsonFiles(parsed.files);
+        if (norm) return { ...parsed, schemaVersion: parsed.schemaVersion || 1, files: norm };
+      }
+    } catch {
+      // Fall through to next match or markdown parser
+    }
+  }
+
+  // 3. Embedded JSON object with "files" anywhere in text
+  const firstBrace = raw.indexOf("{");
+  const lastBrace = raw.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace && raw.includes('"files"')) {
+    try {
+      const candidate = raw.slice(firstBrace, lastBrace + 1);
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && parsed.files && typeof parsed.files === "object") {
+        const norm = normalizeJsonFiles(parsed.files);
+        if (norm) return { ...parsed, schemaVersion: parsed.schemaVersion || 1, files: norm };
+      }
+    } catch {
+      // Fall through
     }
   }
 

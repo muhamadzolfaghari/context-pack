@@ -50,6 +50,31 @@ test("handleApplyCommand dry-run parses file and generates plan", function () {
   assert.equal(fs.readFileSync(path.join(root, "src/file.js"), "utf8"), "const x = 1;\n");
 });
 
+test("handleApplyCommand dry-run parses JSON response file matching AI prompt protocol", function () {
+  const root = fixture({
+    "src/file.js": "const x = 1;\n"
+  });
+
+  const responseJsonFile = path.join(root, "response.json");
+  fs.writeFileSync(responseJsonFile, JSON.stringify({
+    files: {
+      "src/file.js": {
+        content: "const x = 99;\n"
+      },
+      "src/new.js": {
+        content: "const y = 100;\n"
+      }
+    }
+  }, null, 2));
+
+  const result = handleApplyCommand(responseJsonFile, { dryRun: true }, root);
+  assert.equal(result.dryRun, true);
+  assert.equal(result.updatedCount, 1);
+  assert.equal(result.createdCount, 1);
+  assert.equal(fs.readFileSync(path.join(root, "src/file.js"), "utf8"), "const x = 1;\n");
+  assert.equal(fs.existsSync(path.join(root, "src/new.js")), false);
+});
+
 test("handleApplyCommand live write updates file and handleRevertCommand rolls it back", function () {
   const root = fixture({
     "src/file.js": "const x = 1;\n"

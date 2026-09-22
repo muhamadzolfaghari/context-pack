@@ -58,6 +58,7 @@ export function createTuiState(scan, root) {
     focusInput: "",
     applyPlan: null,
     applyRaw: null,
+    lastResponse: null,
     previewLines: [],
     previewItem: null,
     previewScroll: 0

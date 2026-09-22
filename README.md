@@ -118,23 +118,21 @@ Easily export context to ChatGPT, Claude, or DeepSeek, and apply the chatbot's c
 # 1. Export context dump with AI Assistant Instructions protocol (copied to clipboard)
 ctxlab dump src/auth --focus "refresh token flow" --copy
 
-# 2. Paste into ChatGPT / Claude. Once the chatbot responds with code blocks, copy its response.
+# 2. Paste into ChatGPT / Claude. Once the chatbot responds with JSON, copy its response.
 
 # 3. Apply changes directly to your project (previews diff and creates automatic backup)
 ctxlab apply
 
-# Optional: preview proposed changes without writing files
+# Optional: preview proposed changes without writing files (inspects diff plan)
 ctxlab apply --dry-run
 
-# Optional: apply from a saved markdown or patch file
-ctxlab apply response.md
-
-# Undo/revert applied changes anytime from the safety backup
-ctxlab revert
+# Optional: apply from a saved JSON or markdown patch file
+ctxlab apply response.json
 ```
 
 In the interactive CLI (`ctxlab`):
-- Press **`Ctrl+E`** to build and copy your context pack.
+- Press **`y`** to immediately copy your context pack to clipboard from the main view (or **`Ctrl+E`** for detailed build summary).
+- Press **`Y`** in the main view or **`c`** in the apply view to copy the AI response to clipboard anytime.
 - When you receive the chatbot's response, press **`r`** to open the **Apply AI Response** modal: it displays a live diff preview table of all files to create, update, or keep unchanged, and applies them upon `Enter` with automated safety backup!
 
 Restore and apply safely reject absolute paths and `..` traversal, refuse symlink-parent traversal, and save safety snapshots to `.ctxlab/backups/<timestamp>/`.

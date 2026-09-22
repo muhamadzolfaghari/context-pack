@@ -1,6 +1,6 @@
 import path from "node:path";
 import { TARGET_PROFILES, formatTokens } from "../../core/constants.js";
-import { c, stripAnsi, truncate, padEnd, formatBytes, isColor } from "../terminal.js";
+import { c, stripAnsi, truncate, padEnd, formatBytes, isColor, BOX, badge, gitBranch } from "../terminal.js";
 import { currentBudget, selectedSeedEstimate, getSelectionState } from "./state.js";
 
 export function clear() {
@@ -18,182 +18,319 @@ export function highlightMatch(text, query) {
       const before = result.slice(0, idx);
       const matched = result.slice(idx, idx + term.length);
       const after = result.slice(idx + term.length);
-      result = before + c.bold + c.yellow + matched + c.reset + after;
+      result = before + c.bold + c.amber + matched + c.reset + after;
     }
   }
   return result;
 }
 
 export function renderProgressBar(usedTokens, maxBudget, barWidth) {
+  const width = barWidth || 20;
   const ratio = Math.min(1, Math.max(0, usedTokens / maxBudget));
   const percent = Math.min(100, Math.round(ratio * 100));
-  const filled = Math.min(barWidth, Math.round(ratio * barWidth));
-  const empty = barWidth - filled;
+  const filled = Math.min(width, Math.round(ratio * width));
+  const empty = width - filled;
 
-  let barColor = c.green;
-  if (percent > 90) barColor = c.red;
-  else if (percent > 70) barColor = c.yellow;
+  let barColor = c.emerald;
+  if (percent > 90) barColor = c.rose;
+  else if (percent > 70) barColor = c.amber;
 
   const bar = barColor + "█".repeat(filled) + c.dim + "░".repeat(empty) + c.reset;
   return "[" + bar + "] " + c.bold + String(percent).padStart(3) + "%" + c.reset;
 }
 
 export function renderTargetSelector(state, version) {
-  const cols = Math.max(60, process.stdout.columns || 80);
-  const sep = c.dim + "─".repeat(Math.min(cols, 80)) + c.reset;
+  const cols = Math.max(64, process.stdout.columns || 80);
+  const cardWidth = Math.min(cols - 4, 88);
+  const hLine = "─".repeat(cardWidth - 2);
   const ver = version ? "v" + version : "v1.3.0";
 
   console.log("");
-  console.log("  " + c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + "Select Target LLM" + c.reset);
-  console.log("  " + c.dim + "Picks safe token budgets optimized for each provider's context limits." + c.reset);
-  console.log("  " + sep);
+  console.log("  " + c.cyan + BOX.tl + hLine + BOX.tr + c.reset);
   console.log(
-    "     " +
-    padEnd(c.dim + "Target" + c.reset, 16) +
-    padEnd(c.dim + "Safe budget" + c.reset, 20) +
-    padEnd(c.dim + "Context" + c.reset, 16) +
-    c.dim + "Model family" + c.reset
+    "  " + c.cyan + BOX.v + c.reset +
+    " " + c.bold + c.cyan + "◆ CONTEXT LAB ENTERPRISE" + c.reset + " " + c.dim + ver + c.reset +
+    " " + c.dim + "│" + c.reset + " " + c.bold + "LLM Target Optimization Hub" + c.reset +
+    " ".repeat(Math.max(0, cardWidth - 58)) +
+    c.cyan + BOX.v + c.reset
+  );
+  console.log(
+    "  " + c.cyan + BOX.v + c.reset +
+    " " + c.dim + "Configures safety token budgets and packaging algorithms per model context." + c.reset +
+    " ".repeat(Math.max(0, cardWidth - 76)) +
+    c.cyan + BOX.v + c.reset
+  );
+  console.log("  " + c.cyan + BOX.vl + hLine + BOX.vr + c.reset);
+
+  console.log(
+    "  " + c.cyan + BOX.v + c.reset +
+    "   " +
+    padEnd(c.dim + "PROFILE / PROVIDER" + c.reset, 22) +
+    padEnd(c.dim + "SAFE PACK LIMIT" + c.reset, 20) +
+    padEnd(c.dim + "CONTEXT WINDOW" + c.reset, 18) +
+    padEnd(c.dim + "RECOMMENDED WORKFLOW" + c.reset, 22) +
+    c.cyan + BOX.v + c.reset
   );
 
   state.targetChoices.forEach(function (id, index) {
     const active = index === state.targetCursor;
-    const pointer = active ? c.bold + c.cyan + " ❯ " + c.reset : "   ";
-    const keyNum = c.dim + (index + 1) + ". " + c.reset;
+    const pointer = active ? c.bold + c.cyan + "❯" + c.reset : " ";
+    const keyNum = c.dim + (index + 1) + "." + c.reset;
 
     if (id === null) {
-      const line = pointer + keyNum + padEnd(c.bold + "custom" + c.reset, 18) + padEnd(c.yellow + "choose budget" + c.reset, 22) + padEnd(c.dim + "manual" + c.reset, 16) + c.dim + "Custom token capacity" + c.reset;
-      console.log(active ? c.inverse + stripAnsi(line) + c.reset : line);
+      const line =
+        " " + pointer + " " + keyNum + " " +
+        padEnd(c.bold + "Custom Token Budget" + c.reset, 26) +
+        padEnd(c.amber + "Manual Capacity" + c.reset, 24) +
+        padEnd(c.dim + "Variable" + c.reset, 20) +
+        c.dim + "Configure custom limits" + c.reset;
+
+      const padded = padEnd(line, cardWidth + 14);
+      console.log("  " + c.cyan + BOX.v + c.reset + (active ? c.inverse + stripAnsi(padded) + c.reset : padded) + c.cyan + BOX.v + c.reset);
       return;
     }
 
     const profile = TARGET_PROFILES[id];
-    const context = profile.contextWindow ? formatTokens(profile.contextWindow) + " ctx" : "generic";
-    const targetName = (active ? c.bold + c.cyan : "") + id.padEnd(12) + c.reset;
-    const budgetText = (active ? c.bold + c.green : c.green) + formatTokens(profile.safeBudget).padStart(7) + " safe" + c.reset;
-    const ctxText = c.dim + context.padStart(11) + c.reset;
-    const modelText = c.dim + profile.modelFamily + c.reset;
+    const context = profile.contextWindow ? formatTokens(profile.contextWindow) + " ctx" : "Standard";
+    let providerBadge = badge(id.toUpperCase(), c.cyan, c.bgDark);
+    if (id === "chatgpt") providerBadge = badge("OPENAI", c.emerald, c.bgDark);
+    else if (id === "claude") providerBadge = badge("ANTHROPIC", c.sky, c.bgDark);
+    else if (id === "deepseek") providerBadge = badge("DEEPSEEK", c.violet, c.bgDark);
 
-    const line = pointer + keyNum + padEnd(targetName, 18) + padEnd(budgetText, 22) + padEnd(ctxText, 16) + modelText;
-    console.log(active ? c.inverse + stripAnsi(line) + c.reset : line);
+    let workflowDesc = "General repository reasoning";
+    if (id === "claude") workflowDesc = "Large full-subsystem audits";
+    else if (id === "chatgpt") workflowDesc = "Fast agile feature workflows";
+    else if (id === "deepseek") workflowDesc = "Deep architectural analysis";
+    else if (id === "chatbox") workflowDesc = "Local models & small context";
+
+    const targetName = (active ? c.bold + c.cyan : "") + id + c.reset;
+    const budgetText = (active ? c.bold + c.emerald : c.emerald) + formatTokens(profile.safeBudget).padStart(7) + " tokens" + c.reset;
+    const ctxText = c.dim + context.padStart(10) + c.reset;
+
+    const line =
+      " " + pointer + " " + keyNum + " " +
+      padEnd(targetName + " " + providerBadge, 26) +
+      padEnd(budgetText, 22) +
+      padEnd(ctxText, 18) +
+      c.dim + truncate(workflowDesc, 26) + c.reset;
+
+    const padded = padEnd(line, cardWidth + 16);
+    console.log("  " + c.cyan + BOX.v + c.reset + (active ? c.inverse + stripAnsi(padded) + c.reset : padded) + c.cyan + BOX.v + c.reset);
   });
 
-  console.log("  " + sep);
-  console.log("  " + c.dim + "↑/↓ or 1-" + state.targetChoices.length + " choose  ·  " + c.reset + c.bold + "Enter" + c.reset + c.dim + " continue  ·  " + c.reset + c.bold + "q" + c.reset + c.dim + " quit" + c.reset + "\n");
+  console.log("  " + c.cyan + BOX.bl + hLine + BOX.br + c.reset);
+  console.log("  " + c.dim + "↑/↓ or 1-" + state.targetChoices.length + " select  ·  " + c.reset + c.bold + "Enter" + c.reset + c.dim + " confirm  ·  " + c.reset + c.bold + "q" + c.reset + c.dim + " quit" + c.reset + "\n");
 }
 
 export function renderBudgetSelector(state, version) {
   const BUDGET_LIST = [8000, 16000, 32000, 64000, 128000, 256000, 500000, 1000000];
-  const cols = Math.max(60, process.stdout.columns || 80);
-  const sep = c.dim + "─".repeat(Math.min(cols, 80)) + c.reset;
+  const cols = Math.max(64, process.stdout.columns || 80);
+  const cardWidth = Math.min(cols - 4, 88);
+  const hLine = "─".repeat(cardWidth - 2);
   const ver = version ? "v" + version : "v1.3.0";
 
   console.log("");
-  console.log("  " + c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + "Custom Token Budget" + c.reset);
-  console.log("  " + c.dim + "Select token capacity or press Esc to return to targets." + c.reset);
-  console.log("  " + sep);
+  console.log("  " + c.cyan + BOX.tl + hLine + BOX.tr + c.reset);
+  console.log(
+    "  " + c.cyan + BOX.v + c.reset +
+    " " + c.bold + c.cyan + "◆ CONTEXT LAB ENTERPRISE" + c.reset + " " + c.dim + ver + c.reset +
+    " " + c.dim + "│" + c.reset + " " + c.bold + "Custom Token Budget Allocator" + c.reset +
+    " ".repeat(Math.max(0, cardWidth - 62)) +
+    c.cyan + BOX.v + c.reset
+  );
+  console.log("  " + c.cyan + BOX.vl + hLine + BOX.vr + c.reset);
 
   BUDGET_LIST.forEach(function (budget, index) {
     const active = index === state.budgetCursor;
-    const pointer = active ? c.bold + c.cyan + " ❯ " + c.reset : "   ";
-    const keyNum = c.dim + (index + 1) + ". " + c.reset;
+    const pointer = active ? c.bold + c.cyan + "❯" + c.reset : " ";
+    const keyNum = c.dim + (index + 1) + "." + c.reset;
     const label = formatTokens(budget).padStart(6) + " tokens";
-    let desc = "Standard safe budget";
-    if (budget <= 16000) desc = "Fast, minimal context pack";
-    else if (budget === 32000) desc = "Default balanced context window";
-    else if (budget >= 500000) desc = "Large context (Claude / Gemini / DeepSeek)";
 
-    const row = pointer + keyNum + padEnd(c.bold + label + c.reset, 24) + c.dim + desc + c.reset;
-    console.log(active ? c.inverse + stripAnsi(row) + c.reset : row);
+    let desc = "Standard balanced context pack";
+    let tierBadge = badge("BALANCED", c.emerald, c.bgDark);
+    if (budget <= 16000) {
+      desc = "Fast minimal snippet / focused PR review";
+      tierBadge = badge("FAST", c.sky, c.bgDark);
+    } else if (budget === 64000 || budget === 128000) {
+      desc = "Multi-file module and subsystem refactors";
+      tierBadge = badge("DEEP", c.amber, c.bgDark);
+    } else if (budget >= 256000) {
+      desc = "Enterprise massive repository context";
+      tierBadge = badge("ULTRA", c.rose, c.bgDark);
+    }
+
+    const row =
+      " " + pointer + " " + keyNum + " " +
+      padEnd(c.bold + label + c.reset, 20) +
+      padEnd(tierBadge, 14) +
+      c.dim + desc + c.reset;
+
+    const padded = padEnd(row, cardWidth + 14);
+    console.log("  " + c.cyan + BOX.v + c.reset + (active ? c.inverse + stripAnsi(padded) + c.reset : padded) + c.cyan + BOX.v + c.reset);
   });
 
-  console.log("  " + sep);
-  console.log("  " + c.dim + "↑/↓ or 1-" + BUDGET_LIST.length + " select  ·  " + c.reset + c.bold + "Enter" + c.reset + c.dim + " continue  ·  " + c.reset + c.bold + "Esc" + c.reset + c.dim + " back" + c.reset + "\n");
+  console.log("  " + c.cyan + BOX.bl + hLine + BOX.br + c.reset);
+  console.log("  " + c.dim + "↑/↓ or 1-" + BUDGET_LIST.length + " select  ·  " + c.reset + c.bold + "Enter" + c.reset + c.dim + " save  ·  " + c.reset + c.bold + "Esc" + c.reset + c.dim + " back" + c.reset + "\n");
 }
 
 export function renderFocusModal(state, version) {
-  const cols = Math.max(60, process.stdout.columns || 80);
-  const sep = c.dim + "─".repeat(Math.min(cols, 80)) + c.reset;
+  const cols = Math.max(64, process.stdout.columns || 80);
+  const cardWidth = Math.min(cols - 4, 88);
+  const hLine = "─".repeat(cardWidth - 2);
   const ver = version ? "v" + version : "v1.3.0";
 
   console.log("");
-  console.log("  " + c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + "Set Task Focus Prompt" + c.reset);
-  console.log("  " + c.dim + "Enter a description of what you want the LLM to achieve." + c.reset);
-  console.log("  " + c.dim + "Context Lab ranks and pulls dependencies and tests based on this prompt." + c.reset);
-  console.log("  " + sep);
-  console.log("  " + c.bold + "Prompt:" + c.reset + " " + c.cyan + (state.focusInput || c.dim + "(type your task, e.g. refactor auth flow and update tests)" + c.reset) + c.bold + "█" + c.reset);
-  console.log("  " + sep);
-  console.log("  " + c.bold + "Enter" + c.reset + c.dim + " save  ·  " + c.reset + c.bold + "Esc" + c.reset + c.dim + " cancel / clear" + c.reset + "\n");
+  console.log("  " + c.cyan + BOX.tl + hLine + BOX.tr + c.reset);
+  console.log(
+    "  " + c.cyan + BOX.v + c.reset +
+    " " + c.bold + c.cyan + "◆ CONTEXT LAB ENTERPRISE" + c.reset + " " + c.dim + ver + c.reset +
+    " " + c.dim + "│" + c.reset + " " + c.bold + "Task Objective & Dependency Focus" + c.reset +
+    " ".repeat(Math.max(0, cardWidth - 66)) +
+    c.cyan + BOX.v + c.reset
+  );
+  console.log(
+    "  " + c.cyan + BOX.v + c.reset +
+    " " + c.dim + "Context Lab analyzes this task prompt to prioritize files, follow imports, and pull tests." + c.reset +
+    " ".repeat(Math.max(0, cardWidth - 88)) +
+    c.cyan + BOX.v + c.reset
+  );
+  console.log("  " + c.cyan + BOX.vl + hLine + BOX.vr + c.reset);
+  console.log(
+    "  " + c.cyan + BOX.v + c.reset +
+    " " + c.bold + "Objective:" + c.reset + " " + c.cyan + (state.focusInput || c.dim + "(enter objective, e.g. refactor auth token rotation and update tests)" + c.reset) + c.bold + "█" + c.reset
+  );
+  console.log("  " + c.cyan + BOX.bl + hLine + BOX.br + c.reset);
+  console.log("  " + c.bold + "Enter" + c.reset + c.dim + " save focus  ·  " + c.reset + c.bold + "Esc" + c.reset + c.dim + " cancel / clear" + c.reset + "\n");
 }
 
 export function renderRestoreModal(state, version) {
-  const cols = Math.max(60, process.stdout.columns || 80);
-  const sep = c.dim + "─".repeat(Math.min(cols, 80)) + c.reset;
+  const cols = Math.max(64, process.stdout.columns || 80);
+  const cardWidth = Math.min(cols - 4, 94);
+  const hLine = "─".repeat(cardWidth - 2);
   const ver = version ? "v" + version : "v1.3.0";
 
   console.log("");
-  console.log("  " + c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + "Apply AI Response From Clipboard" + c.reset);
+  console.log("  " + c.cyan + BOX.tl + hLine + BOX.tr + c.reset);
+  console.log(
+    "  " + c.cyan + BOX.v + c.reset +
+    " " + c.bold + c.cyan + "◆ CONTEXT LAB ENTERPRISE" + c.reset + " " + c.dim + ver + c.reset +
+    " " + c.dim + "│" + c.reset + " " + c.bold + "Apply AI Response & Pre-flight Inspection" + c.reset +
+    " ".repeat(Math.max(0, cardWidth - 72)) +
+    c.cyan + BOX.v + c.reset
+  );
+  console.log("  " + c.cyan + BOX.vl + hLine + BOX.vr + c.reset);
 
   if (state.applyPlan && state.applyPlan.length > 0) {
-    console.log("  " + c.dim + "Detected " + state.applyPlan.length + " file modifications from chatbot response:" + c.reset);
-    console.log("  " + sep);
-    for (const item of state.applyPlan.slice(0, 12)) {
+    let creates = 0;
+    let updates = 0;
+    let unchanges = 0;
+    for (const item of state.applyPlan) {
+      if (item.status === "create") creates++;
+      else if (item.status === "update") updates++;
+      else unchanges++;
+    }
+
+    const summaryBadge =
+      badge(creates + " CREATE", c.emerald, c.bgDark) + " " +
+      badge(updates + " UPDATE", c.amber, c.bgDark) + " " +
+      badge(unchanges + " UNCHANGED", c.slate, c.bgDark);
+
+    console.log(
+      "  " + c.cyan + BOX.v + c.reset +
+      " " + c.dim + "Impact Summary: " + c.reset + summaryBadge +
+      " ".repeat(Math.max(0, cardWidth - 48)) +
+      c.cyan + BOX.v + c.reset
+    );
+    console.log("  " + c.cyan + BOX.vl + hLine + BOX.vr + c.reset);
+
+    console.log(
+      "  " + c.cyan + BOX.v + c.reset +
+      "  " +
+      padEnd(c.dim + "ACTION" + c.reset, 14) +
+      padEnd(c.dim + "TARGET FILE PATH" + c.reset, 44) +
+      padEnd(c.dim + "DIFF DELTA" + c.reset, 20) +
+      c.cyan + BOX.v + c.reset
+    );
+
+    for (const item of state.applyPlan.slice(0, 14)) {
       let tag = c.dim + "[UNCHANGED]" + c.reset;
       let delta = c.dim + item.lines + " lines" + c.reset;
       if (item.status === "create") {
-        tag = c.bold + c.green + "[CREATE]   " + c.reset;
-        delta = c.green + "+" + item.lines + " lines" + c.reset;
+        tag = c.bold + c.emerald + "[CREATE]   " + c.reset;
+        delta = c.emerald + "+" + item.lines + " lines" + c.reset;
       } else if (item.status === "update") {
-        tag = c.bold + c.yellow + "[UPDATE]   " + c.reset;
-        delta = c.yellow + "+" + item.additions + ", -" + item.deletions + " lines" + c.reset;
+        tag = c.bold + c.amber + "[UPDATE]   " + c.reset;
+        delta = c.amber + "+" + item.additions + ", -" + item.deletions + " lines" + c.reset;
       }
-      console.log("  " + tag + " " + padEnd(item.path, 36) + " " + delta);
+      const line = "  " + tag + "  " + padEnd(item.path, 40) + "  " + padEnd(delta, 18);
+      const padded = padEnd(line, cardWidth + 14);
+      console.log("  " + c.cyan + BOX.v + c.reset + padded + c.cyan + BOX.v + c.reset);
     }
-    if (state.applyPlan.length > 12) {
-      console.log("  " + c.dim + "  ... and " + (state.applyPlan.length - 12) + " more files" + c.reset);
+    if (state.applyPlan.length > 14) {
+      console.log("  " + c.cyan + BOX.v + c.reset + "  " + c.dim + "... and " + (state.applyPlan.length - 14) + " more files" + c.reset);
     }
-    console.log("  " + sep);
-    console.log("  " + c.bold + "Enter / y" + c.reset + " : Apply changes to project (" + c.green + "creates automatic backup" + c.reset + ")");
-    console.log("  " + c.bold + "Esc" + c.reset + "       : Cancel and return to explorer");
+
+    console.log("  " + c.cyan + BOX.vl + hLine + BOX.vr + c.reset);
+    console.log(
+      "  " + c.cyan + BOX.v + c.reset +
+      " " + c.dim + "🛡️ Enterprise Safety: Snapshots saved to .ctxlab/backups/ (revert anytime via 'ctxlab revert')" + c.reset
+    );
+    console.log("  " + c.cyan + BOX.bl + hLine + BOX.br + c.reset);
+    console.log("  " + c.bold + "Enter / y" + c.reset + c.dim + " apply changes with backup  ·  " + c.reset + c.bold + "c" + c.reset + c.dim + " copy response  ·  " + c.reset + c.bold + "Esc" + c.reset + c.dim + " cancel" + c.reset + "\n");
   } else {
-    console.log("  " + c.dim + "No valid file code blocks detected in clipboard." + c.reset);
-    console.log("  " + sep);
-    console.log("  " + c.bold + "1." + c.reset + " Ask ChatGPT, Claude, or DeepSeek for code changes.");
-    console.log("  " + c.bold + "2." + c.reset + " Copy the chatbot's response (Cmd+C / Ctrl+C).");
-    console.log("  " + c.bold + "3." + c.reset + " Press " + c.bold + "[r]" + c.reset + " again to preview and apply changes to your project.");
-    console.log("  " + sep);
-    if (state.message) console.log("  " + c.yellow + state.message + c.reset + "\n  " + sep);
-    console.log("  " + c.bold + "Esc" + c.reset + " : back to explorer");
+    console.log("  " + c.cyan + BOX.v + c.reset + " " + c.dim + "No valid JSON or code block modifications detected in clipboard." + c.reset);
+    console.log("  " + c.cyan + BOX.vl + hLine + BOX.vr + c.reset);
+    console.log("  " + c.cyan + BOX.v + c.reset + "  " + c.bold + "1." + c.reset + " Prompt ChatGPT, Claude, or DeepSeek with your context pack.");
+    console.log("  " + c.cyan + BOX.v + c.reset + "  " + c.bold + "2." + c.reset + " Copy the chatbot's JSON or code block response to clipboard (Cmd+C / Ctrl+C).");
+    console.log("  " + c.cyan + BOX.v + c.reset + "  " + c.bold + "3." + c.reset + " Press " + c.bold + "[r]" + c.reset + " here to inspect changes and apply them safely.");
+    if (state.message) {
+      console.log("  " + c.cyan + BOX.vl + hLine + BOX.vr + c.reset);
+      console.log("  " + c.cyan + BOX.v + c.reset + "  " + c.amber + state.message + c.reset);
+    }
+    console.log("  " + c.cyan + BOX.bl + hLine + BOX.br + c.reset);
+    console.log("  " + c.bold + "Esc" + c.reset + c.dim + " return to browser" + c.reset + "\n");
   }
-  console.log("");
 }
 
 export function renderDoneModal(state, version) {
-  const cols = Math.max(60, process.stdout.columns || 80);
-  const sep = c.dim + "─".repeat(Math.min(cols, 80)) + c.reset;
+  const cols = Math.max(64, process.stdout.columns || 80);
+  const cardWidth = Math.min(cols - 4, 88);
+  const hLine = "─".repeat(cardWidth - 2);
   const ver = version ? "v" + version : "v1.3.0";
 
   console.log("");
-  console.log("  " + c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + c.green + "✔ Pack Built Successfully!" + c.reset);
-  console.log("  " + sep);
+  console.log("  " + c.emerald + BOX.tl + hLine + BOX.tr + c.reset);
+  console.log(
+    "  " + c.emerald + BOX.v + c.reset +
+    " " + c.bold + c.emerald + "✔ CONTEXT PACK BUILT & COPIED" + c.reset + " " + c.dim + ver + c.reset +
+    " ".repeat(Math.max(0, cardWidth - 42)) +
+    c.emerald + BOX.v + c.reset
+  );
+  console.log("  " + c.emerald + BOX.vl + hLine + BOX.vr + c.reset);
+
   if (state.builtPack) {
-    console.log("  " + padEnd(c.dim + "Files Selected:" + c.reset, 24) + c.bold + state.builtPack.selectedCount + c.reset + " / " + state.builtPack.candidateCount + " scanned");
-    console.log("  " + padEnd(c.dim + "Tokens Packed:" + c.reset, 24) + c.bold + c.green + formatTokens(state.builtPack.totalTokens) + c.reset + " / " + formatTokens(state.builtPack.budget) + " safe budget");
-    console.log("  " + padEnd(c.dim + "Target Profile:" + c.reset, 24) + c.cyan + (state.builtPack.target ? state.builtPack.target.id + " (" + state.builtPack.target.modelFamily + ")" : "custom") + c.reset);
-    console.log("  " + padEnd(c.dim + "Output Format:" + c.reset, 24) + state.format);
+    const headroom = Math.max(0, state.builtPack.budget - state.builtPack.totalTokens);
+    console.log("  " + c.emerald + BOX.v + c.reset + "  " + padEnd(c.dim + "Files Selected:" + c.reset, 24) + c.bold + state.builtPack.selectedCount + c.reset + " of " + state.builtPack.candidateCount + " scanned");
+    console.log("  " + c.emerald + BOX.v + c.reset + "  " + padEnd(c.dim + "Token Payload:" + c.reset, 24) + c.bold + c.emerald + formatTokens(state.builtPack.totalTokens) + c.reset + " / " + formatTokens(state.builtPack.budget) + " safe budget limit");
+    console.log("  " + c.emerald + BOX.v + c.reset + "  " + padEnd(c.dim + "Response Headroom:" + c.reset, 24) + c.cyan + formatTokens(headroom) + " tokens free" + c.reset + c.dim + " (reserved for reasoning & code response)" + c.reset);
+    console.log("  " + c.emerald + BOX.v + c.reset + "  " + padEnd(c.dim + "Target LLM Profile:" + c.reset, 24) + (state.builtPack.target ? c.cyan + state.builtPack.target.id + " (" + state.builtPack.target.modelFamily + ")" : "custom capacity") + c.reset);
+    console.log("  " + c.emerald + BOX.v + c.reset + "  " + padEnd(c.dim + "Export Format:" + c.reset, 24) + c.bold + state.format + c.reset);
     if (state.builtPack.focus) {
-      console.log("  " + padEnd(c.dim + "Focus Task:" + c.reset, 24) + c.yellow + state.builtPack.focus + c.reset);
+      console.log("  " + c.emerald + BOX.v + c.reset + "  " + padEnd(c.dim + "Task Focus:" + c.reset, 24) + c.amber + state.builtPack.focus + c.reset);
     }
   }
-  console.log("  " + sep);
-  console.log("  " + state.message);
-  console.log("  " + sep);
-  console.log("  " + c.bold + "Enter / Esc" + c.reset + c.dim + " return to browser  ·  " + c.reset + c.bold + "c" + c.reset + c.dim + " copy again  ·  " + c.reset + c.bold + "q" + c.reset + c.dim + " quit" + c.reset + "\n");
+
+  console.log("  " + c.emerald + BOX.vl + hLine + BOX.vr + c.reset);
+  console.log("  " + c.emerald + BOX.v + c.reset + "  " + (state.message || c.emerald + "✔ Ready to paste into ChatGPT, Claude, or DeepSeek." + c.reset));
+  console.log("  " + c.emerald + BOX.bl + hLine + BOX.br + c.reset);
+  console.log("  " + c.bold + "Enter / Esc" + c.reset + c.dim + " return to explorer  ·  " + c.reset + c.bold + "c / y" + c.reset + c.dim + " copy again  ·  " + c.reset + c.bold + "q" + c.reset + c.dim + " quit" + c.reset + "\n");
 }
 
 export function renderPreview(state, version) {
-  const cols = Math.max(60, process.stdout.columns || 80);
+  const cols = Math.max(64, process.stdout.columns || 80);
   const rows = Math.max(16, process.stdout.rows || 24);
-  const sep = c.dim + "─".repeat(Math.min(cols, 90)) + c.reset;
+  const cardWidth = Math.min(cols - 4, 94);
+  const hLine = "─".repeat(cardWidth - 2);
   const ver = version ? "v" + version : "v1.3.0";
 
   if (!state.previewItem) {
@@ -207,93 +344,114 @@ export function renderPreview(state, version) {
     : state.previewItem.rel + "/" + c.dim + " (" + state.previewItem.count + " files · ~" + formatTokens(state.previewItem.tokens) + " tok)" + c.reset;
 
   console.log("");
-  console.log("  " + c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + (isFile ? "Preview: " : "Folder Contents: ") + c.reset + itemInfo);
-  console.log("  " + sep);
+  console.log("  " + c.cyan + BOX.tl + hLine + BOX.tr + c.reset);
+  console.log(
+    "  " + c.cyan + BOX.v + c.reset +
+    " " + c.bold + c.cyan + "◆ CONTEXT LAB" + c.reset + " " + c.dim + ver + c.reset +
+    " " + c.dim + "│" + c.reset + " " + c.bold + (isFile ? "File Inspector: " : "Folder Contents: ") + c.reset + itemInfo
+  );
+  console.log("  " + c.cyan + BOX.vl + hLine + BOX.vr + c.reset);
 
   const viewHeight = Math.max(8, rows - 7);
   const end = Math.min(state.previewLines.length, state.previewScroll + viewHeight);
 
   for (let i = state.previewScroll; i < end; i++) {
-    const lineNum = c.dim + String(i + 1).padStart(4) + " │ " + c.reset;
-    const content = truncate(state.previewLines[i] || "", cols - 12);
-    console.log("  " + lineNum + content);
+    const lineNum = c.dim + String(i + 1).padStart(4) + " " + BOX.v + " " + c.reset;
+    const content = truncate(state.previewLines[i] || "", cardWidth - 12);
+    console.log("  " + c.cyan + BOX.v + c.reset + "  " + lineNum + content);
   }
 
   for (let i = end - state.previewScroll; i < viewHeight; i++) {
-    console.log("");
+    console.log("  " + c.cyan + BOX.v + c.reset);
   }
 
-  console.log("  " + sep);
+  console.log("  " + c.cyan + BOX.bl + hLine + BOX.br + c.reset);
   const isSelected = state.selected.has(state.previewItem.abs);
-  const selectStatus = isSelected ? c.green + "[✔ Selected]" + c.reset : c.dim + "[Unselected]" + c.reset;
-  console.log("  " + selectStatus + "  " + c.dim + "│" + c.reset + "  " + c.bold + "Space" + c.reset + " toggle  ·  " + c.bold + "↑/k" + c.reset + " up  ·  " + c.bold + "↓/j" + c.reset + " down  ·  " + c.bold + "PgUp/u" + c.reset + " half  ·  " + c.bold + "g/G" + c.reset + " top/end  ·  " + c.bold + "Esc/v/q" + c.reset + " back");
+  const selectStatus = isSelected ? c.emerald + "[✔ Selected]" + c.reset : c.dim + "[Unselected]" + c.reset;
+  console.log("  " + selectStatus + "  " + c.dim + "│" + c.reset + "  " + c.bold + "Space" + c.reset + " toggle  ·  " + c.bold + "↑/k" + c.reset + " up  ·  " + c.bold + "↓/j" + c.reset + " down  ·  " + c.bold + "PgUp/PgDn" + c.reset + " scroll  ·  " + c.bold + "Esc/v/q" + c.reset + " back");
 }
 
 export function renderBrowse(state, visible, version) {
-  const cols = Math.max(60, process.stdout.columns || 80);
+  const cols = Math.max(64, process.stdout.columns || 80);
   const rows = Math.max(16, process.stdout.rows || 24);
-  const sep = c.dim + "─".repeat(Math.min(cols, 90)) + c.reset;
+  const cardWidth = Math.min(cols - 4, 102);
+  const hLine = "─".repeat(cardWidth - 2);
 
   if (state.cursor >= visible.length) state.cursor = Math.max(0, visible.length - 1);
 
   const budget = currentBudget(state);
   const est = selectedSeedEstimate(state);
-  const targetLabel = state.activeTarget ? state.activeTarget : "custom (" + formatTokens(budget) + ")";
+  const targetLabel = state.activeTarget ? state.activeTarget.toUpperCase() : "CUSTOM (" + formatTokens(budget) + ")";
   const ver = version ? "v" + version : "v1.3.0";
+  const branch = gitBranch();
 
-  // Header Title Bar
-  const title = c.bold + c.cyan + "◆ Context Lab" + c.reset + " " + c.dim + ver + c.reset;
-  const targetBadge = c.dim + "Target: " + c.reset + c.cyan + targetLabel + c.reset;
-  const formatBadge = c.dim + "Format: " + c.reset + c.bold + state.format + c.reset;
-  console.log("  " + title + "  " + c.dim + "│" + c.reset + "  " + targetBadge + "  " + c.dim + "│" + c.reset + "  " + formatBadge);
+  // 1. EXECUTIVE ENTERPRISE HEADER
+  console.log("  " + c.cyan + BOX.tl + hLine + BOX.tr + c.reset);
 
-  // Budget Progress Bar
+  const brand = c.bold + c.cyan + "◆ CONTEXT LAB ENTERPRISE" + c.reset + " " + c.dim + ver + c.reset;
+  const targetBadge = badge(targetLabel, c.bold + c.cyan, c.bgDark);
+  const formatBadge = badge(state.format.toUpperCase(), c.bold + c.white, c.bgDark);
+  const branchBadge = branch ? badge("🌿 " + branch, c.emerald, c.bgDark) : "";
+  const gitDirtyCount = state.gitChangedList ? state.gitChangedList.length : 0;
+  const gitBadge = gitDirtyCount > 0 ? badge("● " + gitDirtyCount + " MODIFIED", c.amber, c.bgDark) : badge("✔ CLEAN", c.emerald, c.bgDark);
+
+  console.log("  " + c.cyan + BOX.v + c.reset + " " + brand + "  " + targetBadge + " " + formatBadge + " " + branchBadge + " " + gitBadge);
+
+  // 2. CAPACITY & TOKEN TELEMETRY METER
   const progressBar = renderProgressBar(est.tokens, budget, 18);
-  const estTokensText = c.bold + formatTokens(est.tokens) + c.reset + c.dim + "/" + formatTokens(budget) + " tokens" + c.reset;
-  const seedsCountText = c.green + est.seedsCount + " seeds" + c.reset + c.dim + " (" + est.fileCount + " files)" + c.reset;
-  console.log("  " + progressBar + "  ·  " + estTokensText + "  ·  " + seedsCountText);
+  const estTokensText = c.bold + formatTokens(est.tokens) + c.reset + c.dim + " / " + formatTokens(budget) + " tok" + c.reset;
+  const headroom = Math.max(0, budget - est.tokens);
+  const headroomText = c.cyan + formatTokens(headroom) + " free" + c.reset;
+  const seedsCountText = c.emerald + est.seedsCount + " seeds" + c.reset + c.dim + " (" + est.fileCount + " files in pack)" + c.reset;
+  const redactBadge = badge("SHIELD REDACTION: ON", c.sky, c.bgDark);
 
-  // Mode & Breadcrumbs Bar
+  console.log("  " + c.cyan + BOX.v + c.reset + " " + progressBar + " " + c.dim + "│" + c.reset + " " + estTokensText + " " + c.dim + "│" + c.reset + " " + headroomText + " " + c.dim + "│" + c.reset + " " + seedsCountText + " " + redactBadge);
+
+  // 3. SUBSYSTEM EXPLORER & TOOLBAR
   let navBar = "";
   if (state.viewMode === "tree") {
     const relCurrent = path.relative(state.ROOT, state.currentDir).split(path.sep).join("/") || ".";
-    const parts = relCurrent === "." ? ["(root)"] : ["root", ...relCurrent.split("/")];
-    const breadcrumb = c.bold + c.blue + "📂 " + parts.join(" › ") + c.reset;
-    const filterText = state.filterQuery ? "  " + c.yellow + "Filter: \"" + state.filterQuery + "\"" + c.reset : "";
-    const modeTag = c.dim + "[Tree Explorer]" + c.reset;
-    navBar = breadcrumb + filterText + "  " + modeTag;
+    const parts = relCurrent === "." ? ["root"] : ["root", ...relCurrent.split("/")];
+    const breadcrumb = c.bold + c.sky + "📂 " + parts.join(" › ") + c.reset;
+    const filterText = state.filterQuery ? "  " + badge("FILTER: " + state.filterQuery, c.amber, c.bgDark) : "";
+    navBar = badge("TREE EXPLORER", c.bold + c.white, c.bgBlue) + " " + breadcrumb + filterText;
   } else if (state.viewMode === "search") {
     const count = visible.length;
-    navBar = c.bold + c.magenta + "🔍 Global Repo Search: " + c.reset +
-      c.bold + (state.searchQuery || c.dim + "(type to search all files & folders...)" + c.reset) + c.cyan + "█" + c.reset +
+    navBar = badge("GLOBAL REPO SEARCH", c.bold + c.white, c.bgCyan) + " " +
+      c.bold + (state.searchQuery || c.dim + "(type to search files & directories...)" + c.reset) + c.cyan + "█" + c.reset +
       "  " + c.dim + "(" + count + " matches)" + c.reset;
   } else if (state.viewMode === "git") {
-    navBar = c.bold + c.yellow + "⚡ Git Changed & Untracked Files " + c.reset + c.dim + "(" + visible.length + " files)" + c.reset;
+    navBar = badge("GIT CHANGED & UNTRACKED", c.bold + c.black, c.bgCyan) + "  " + c.amber + visible.length + " modified files" + c.reset;
   }
-  console.log("  " + navBar);
+
+  console.log("  " + c.cyan + BOX.vl + hLine + BOX.vr + c.reset);
+  console.log("  " + c.cyan + BOX.v + c.reset + " " + navBar);
 
   if (state.focusPrompt) {
-    console.log("  " + c.dim + "🎯 Task Focus: " + c.reset + c.yellow + truncate(state.focusPrompt, cols - 20) + c.reset);
+    console.log("  " + c.cyan + BOX.v + c.reset + " " + c.dim + "🎯 Task Focus: " + c.reset + c.amber + truncate(state.focusPrompt, cardWidth - 22) + c.reset);
+  }
+  if (state.message) {
+    console.log("  " + c.cyan + BOX.v + c.reset + " " + state.message);
   }
 
-  console.log("  " + sep);
+  console.log("  " + c.cyan + BOX.vl + hLine + BOX.vr + c.reset);
 
-  // List header
-  const colStatus = padEnd(c.dim + "State" + c.reset, 9);
-  const colName = padEnd(c.dim + "Name / Path" + c.reset, Math.min(42, Math.floor(cols * 0.45)));
-  const colSize = padEnd(c.dim + "Size / Count" + c.reset, 16);
-  const colTokens = c.dim + "Estimated Tokens" + c.reset;
-  console.log("  " + colStatus + colName + colSize + colTokens);
+  // 4. DATA GRID HEADER
+  const colStatus = padEnd(c.dim + "STATUS" + c.reset, 11);
+  const colName = padEnd(c.dim + "NAME / FILE PATH" + c.reset, Math.min(48, Math.floor(cols * 0.48)));
+  const colSize = padEnd(c.dim + "SIZE / COUNT" + c.reset, 18);
+  const colTokens = c.dim + "ESTIMATED TOKENS" + c.reset;
+  console.log("  " + c.cyan + BOX.v + c.reset + " " + colStatus + colName + colSize + colTokens);
 
   // Viewport calculation
-  const headerLines = state.focusPrompt ? 7 : 6;
+  const headerLines = 7 + (state.focusPrompt ? 1 : 0) + (state.message ? 1 : 0);
   const footerLines = 5;
   const listHeight = Math.max(6, rows - headerLines - footerLines);
   const start = Math.max(0, Math.min(state.cursor - Math.floor(listHeight / 2), Math.max(0, visible.length - listHeight)));
   const end = Math.min(visible.length, start + listHeight);
 
   if (visible.length === 0) {
-    console.log("\n  " + c.dim + "  (No matching files or folders found)" + c.reset + "\n");
+    console.log("  " + c.cyan + BOX.v + c.reset + "\n  " + c.cyan + BOX.v + c.reset + "   " + c.dim + "(No files or directories match active filter)" + c.reset + "\n  " + c.cyan + BOX.v + c.reset);
   } else {
     for (let i = start; i < end; i++) {
       const item = visible[i];
@@ -301,8 +459,8 @@ export function renderBrowse(state, visible, version) {
       const st = getSelectionState(state, item);
 
       let check = c.dim + "[ ]" + c.reset;
-      if (st === "all") check = c.bold + c.green + "[✔]" + c.reset;
-      else if (st === "some") check = c.bold + c.yellow + "[+]" + c.reset;
+      if (st === "all") check = c.bold + c.emerald + "[✔]" + c.reset;
+      else if (st === "some") check = c.bold + c.amber + "[+]" + c.reset;
       else if (item.type === "parent") check = "   ";
 
       const pointer = isActive ? c.bold + c.cyan + "❯" + c.reset : " ";
@@ -310,6 +468,9 @@ export function renderBrowse(state, visible, version) {
       let icon = "📄 ";
       if (item.type === "dir") icon = "📁 ";
       else if (item.type === "parent") icon = " ↳ ";
+
+      let isGitChanged = state.gitChangedSet && state.gitChangedSet.has(item.rel);
+      let gitTag = isGitChanged ? c.amber + "●" + c.reset + " " : "";
 
       let displayName = item.name;
       if (state.viewMode === "search") {
@@ -332,25 +493,25 @@ export function renderBrowse(state, visible, version) {
         tokText = c.dim + "~" + formatTokens(item.tokens) + " tok" + c.reset;
       }
 
-      const maxNameLen = Math.min(40, Math.floor(cols * 0.45));
+      const maxNameLen = Math.min(46, Math.floor(cols * 0.48));
       const statusCol = pointer + " " + check + " ";
-      const nameCol = padEnd(icon + truncate(displayName, maxNameLen), maxNameLen + 4);
-      const sizeCol = padEnd(sizeText, 16);
-      const line = "  " + statusCol + nameCol + sizeCol + tokText;
+      const nameCol = padEnd(gitTag + icon + truncate(displayName, maxNameLen), maxNameLen + 4);
+      const sizeCol = padEnd(sizeText, 18);
+      const line = " " + statusCol + nameCol + sizeCol + tokText;
 
       if (isActive) {
-        console.log(c.inverse + stripAnsi(line) + c.reset);
+        console.log("  " + c.cyan + BOX.v + c.reset + c.inverse + stripAnsi(line) + c.reset);
       } else {
-        console.log(line);
+        console.log("  " + c.cyan + BOX.v + c.reset + line);
       }
     }
   }
 
   for (let i = end - start; i < listHeight; i++) {
-    console.log("");
+    console.log("  " + c.cyan + BOX.v + c.reset);
   }
 
-  console.log("  " + sep);
+  console.log("  " + c.cyan + BOX.vl + hLine + BOX.vr + c.reset);
 
   const currentItem = visible[state.cursor];
   if (currentItem && currentItem.type !== "parent") {
@@ -358,13 +519,16 @@ export function renderBrowse(state, visible, version) {
     const itemInfo = currentItem.type === "dir"
       ? c.cyan + "Folder: " + c.reset + fullPath + "/  (" + currentItem.count + " files, ~" + formatTokens(currentItem.tokens) + " tokens)"
       : c.cyan + "File: " + c.reset + fullPath + "  (" + formatBytes(currentItem.bytes) + ", ~" + formatTokens(currentItem.tokens) + " tokens)";
-    console.log("  " + truncate(itemInfo, cols - 4));
+    console.log("  " + c.cyan + BOX.v + c.reset + " " + truncate(itemInfo, cardWidth - 4));
   } else if (currentItem && currentItem.type === "parent") {
-    console.log("  " + c.dim + "Go up to parent directory: " + currentItem.rel + c.reset);
+    console.log("  " + c.cyan + BOX.v + c.reset + " " + c.dim + "Go up to parent directory: " + currentItem.rel + c.reset);
   } else {
-    console.log("  " + c.dim + "Use Space to select items · / or Tab for Global Search" + c.reset);
+    console.log("  " + c.cyan + BOX.v + c.reset + " " + c.dim + "Space toggle  ·  Tab search/tree  ·  y copy pack  ·  r apply AI response" + c.reset);
   }
 
+  console.log("  " + c.cyan + BOX.bl + hLine + BOX.br + c.reset);
+
+  // 5. COMMAND PALETTE FOOTER
   const keys = [
     c.bold + "[Space]" + c.reset + " Select",
     c.bold + "[Enter]" + c.reset + " Open",
@@ -374,11 +538,15 @@ export function renderBrowse(state, visible, version) {
     c.bold + "[p]" + c.reset + " Focus",
     c.bold + "[a]" + c.reset + " All",
     c.bold + "[c]" + c.reset + " Clear",
+    c.bold + "[y]" + c.reset + " Copy",
     c.bold + "[g]" + c.reset + " Git",
     c.bold + "[r]" + c.reset + " Apply",
     c.bold + "[t]" + c.reset + " Target",
     c.bold + "[Ctrl+E]" + c.reset + " Build",
     c.bold + "[q]" + c.reset + " Quit"
   ];
+  if (state.lastResponse || state.applyRaw) {
+    keys.splice(9, 0, c.bold + "[Y]" + c.reset + " Copy Resp");
+  }
   console.log("  " + keys.join("  "));
 }
