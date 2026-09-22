@@ -25,10 +25,15 @@ export function renderMarkdown(pack, options) {
     lines.push(
       "",
       "> ### 🤖 Instructions for AI Assistant",
-      "> When proposing code modifications or new files, format your response as a valid JSON object matching the schema below.",
-      "> This format allows dry-run validation via " + tick + "ctxlab apply --dry-run" + tick + " and 1-click automated import via " + tick + "ctxlab apply" + tick + ".",
-      "> Wrap the JSON in a single " + fence + "json codeblock so it can be easily copied and applied.",
+      "> When proposing code modifications or new files, you may provide your response in either format:",
       ">",
+      "> #### Option A (Markdown code blocks — recommended):",
+      "> ## path/to/file.ext",
+      "> " + fence + "language",
+      "> <complete file contents>",
+      "> " + fence,
+      ">",
+      "> #### Option B (JSON Object):",
       "> " + fence + "json",
       "> {",
       ">   \"files\": {",
@@ -38,6 +43,8 @@ export function renderMarkdown(pack, options) {
       ">   }",
       "> }",
       "> " + fence,
+      ">",
+      "> Both formats allow dry-run inspection via " + tick + "ctxlab apply --dry-run" + tick + " and 1-click automated import via " + tick + "ctxlab apply" + tick + ".",
       "> Provide complete, unabbreviated file contents for each modified or created file."
     );
   }
