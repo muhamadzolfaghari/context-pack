@@ -70,11 +70,13 @@ export function printHelp(version) {
   console.log("");
 
   console.log(pc.bold("Examples:"));
-  console.log("  " + pc.dim("$") + " ctxlab dump src/auth --focus \"token rotation\" --copy");
-  console.log("  " + pc.dim("$") + " ctxlab apply                           " + pc.dim("# Parse clipboard & apply to project"));
-  console.log("  " + pc.dim("$") + " ctxlab apply response.md --dry-run     " + pc.dim("# Audit diff without writing files"));
-  console.log("  " + pc.dim("$") + " ctxlab revert                          " + pc.dim("# Rollback to latest safety snapshot"));
-  console.log("  " + pc.dim("$") + " ctxlab --target claude --redact --copy");
+  console.log("  " + pc.dim("$") + " ctxlab                                    " + pc.dim("# Launch interactive TUI"));
+  console.log("  " + pc.dim("$") + " ctxlab --focus \"auth token rotation\"     " + pc.dim("# Pack focused task context"));
+  console.log("  " + pc.dim("$") + " ctxlab src/auth.js --target claude        " + pc.dim("# Pack seed file and dependencies"));
+  console.log("  " + pc.dim("$") + " ctxlab dump src/auth --copy               " + pc.dim("# AI dump with apply instructions"));
+  console.log("  " + pc.dim("$") + " ctxlab apply response.md --dry-run        " + pc.dim("# Audit diff without writing files"));
+  console.log("  " + pc.dim("$") + " ctxlab revert                             " + pc.dim("# Rollback to latest safety snapshot"));
+  console.log("  " + pc.dim("$") + " ctxlab --target deepseek --redact --copy");
 }
 
 export function printTargets(version) {
