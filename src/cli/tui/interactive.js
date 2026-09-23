@@ -9,7 +9,6 @@ import { applyDump } from "../../core/dump.js";
 import { c, keyName, readClipboard, writeClipboard, formatBytes } from "../terminal.js";
 import { createTuiState, getVisibleItems, toggleSelection } from "./state.js";
 import {
-  clear,
   renderPreview,
   renderTargetSelector,
   renderBudgetSelector,
@@ -28,8 +27,42 @@ export function startInteractive(options, root, version) {
   if (options && options.format) state.format = options.format;
   if (options && options.focus) state.focusPrompt = options.focus;
 
+  let cleanedUp = false;
+  function cleanup() {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    if (process.stdout.isTTY) {
+      process.stdout.write("\x1b[?25h\x1b[?7h\x1b[?1049l");
+    }
+    if (process.stdin.isTTY) {
+      try {
+        process.stdin.setRawMode(false);
+      } catch {}
+      process.stdin.pause();
+    }
+    process.stdout.off("resize", onResize);
+    process.off("exit", cleanup);
+    process.off("SIGINT", onSigint);
+    process.off("SIGTERM", onSigterm);
+  }
+
+  function exitApp(code = 0) {
+    cleanup();
+    process.exit(code);
+  }
+
+  const onSigint = () => exitApp(0);
+  const onSigterm = () => exitApp(0);
+  const onResize = () => {
+    render();
+  };
+
+  process.once("exit", cleanup);
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
+  process.stdout.on("resize", onResize);
+
   function render() {
-    clear();
     if (state.mode === "preview") {
       renderPreview(state, version);
       return;
@@ -77,15 +110,18 @@ export function startInteractive(options, root, version) {
 
   readline.emitKeypressEvents(process.stdin);
   if (process.stdin.isTTY) process.stdin.setRawMode(true);
+  if (process.stdout.isTTY) {
+    process.stdout.write("\x1b[?1049h\x1b[?25l\x1b[?7l");
+  }
   render();
 
   process.stdin.on("keypress", function (str, key) {
     const k = keyName(key);
-    if (key.ctrl && key.name === "c") process.exit(0);
+    if (key.ctrl && key.name === "c") exitApp(0);
 
     // MODE: TARGET
     if (state.mode === "target") {
-      if (k === "q" || k === "escape") process.exit(0);
+      if (k === "q" || k === "escape") exitApp(0);
       if (k >= "1" && k <= String(state.targetChoices.length)) {
         state.targetCursor = Number(k) - 1;
         const choice = state.targetChoices[state.targetCursor];
@@ -184,7 +220,7 @@ export function startInteractive(options, root, version) {
 
     // MODE: DONE
     if (state.mode === "done") {
-      if (k === "q") process.exit(0);
+      if (k === "q") exitApp(0);
       if ((k === "c" || k === "y") && state.builtPack) {
         const output = state.format === "json" ? renderJson(state.builtPack) : renderMarkdown(state.builtPack);
         if (writeClipboard(output)) {
@@ -289,7 +325,7 @@ export function startInteractive(options, root, version) {
       return;
     }
 
-    if (k === "q") process.exit(0);
+    if (k === "q") exitApp(0);
 
     if (k === "v") {
       const item = visible[state.cursor];
