@@ -440,4 +440,22 @@ test("parseAiResponse parses JSON within markdown code block and conversational 
   assert.equal(parsed.files["src/config.json"].content, '{"debug": true}\n');
 });
 
+test("exactSeeds dumps only selected items without entire codebase", function () {
+  const root = fixture({
+    "package.json": "{\"name\":\"sample\"}",
+    "README.md": "# Readme",
+    "src/target.js": "export const target = true;\n",
+    "src/other.js": "export const other = true;\n"
+  });
+  const pack = buildSmartPack({
+    root: root,
+    seeds: ["src/target.js"],
+    target: "chatgpt",
+    exactSeeds: true
+  });
+  assert.equal(pack.selectedCount, 1);
+  assert.deepEqual(Object.keys(pack.files), ["src/target.js"]);
+});
+
+
 

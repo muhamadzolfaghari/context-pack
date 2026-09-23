@@ -45,9 +45,57 @@ export function buildSmartPack(options) {
     return fullCache.get(rel);
   }
 
+  if (options.exactSeeds && seeds.selected.size > 0) {
+    const selected = [];
+    let totalTokens = 0;
+    for (const rel of Array.from(seeds.selected).sort()) {
+      let content = full(rel);
+      if (options.redact) content = redactSecrets(content);
+      const tokens = estimateTokens(content);
+      selected.push({
+        path: rel,
+        content: content,
+        tokens: tokens,
+        score: 10000,
+        reasons: ["selected-file"]
+      });
+      totalTokens += tokens;
+    }
+    const files = {};
+    for (const file of selected) {
+      files[file.path] = {
+        content: file.content,
+        hash: crypto.createHash("sha256").update(file.content).digest("hex").slice(0, 16),
+        lines: file.content.split("\n").length,
+        tokens: file.tokens,
+        score: file.score,
+        reasons: file.reasons
+      };
+    }
+    return {
+      schemaVersion: 1,
+      strategy: "smart-v1",
+      project: path.basename(root),
+      focus: focus || null,
+      target: budgetInfo.target || null,
+      budgetSource: budgetInfo.source,
+      changedCount: 0,
+      budget: budget,
+      totalTokens: totalTokens,
+      budgetExceeded: totalTokens > budget,
+      selectedCount: selected.length,
+      candidateCount: selected.length,
+      tree: projectTree(Object.keys(files)),
+      files: files,
+      omitted: [],
+      skipped: []
+    };
+  }
+
+  const hasSeeds = seeds.selected.size > 0;
   for (const file of scan.files) {
-    let score = structuralScore(file.path);
-    if (score >= 1500) addReason(file.path, "project-structure");
+    let score = hasSeeds ? 0 : structuralScore(file.path);
+    if (!hasSeeds && score >= 1500) addReason(file.path, "project-structure");
     if (terms.length) {
       const sample = readSample(file.abs).toLowerCase();
       const lowerPath = file.path.toLowerCase();
@@ -79,10 +127,12 @@ export function buildSmartPack(options) {
         .slice(0, 24)
         .map(function (f) { return f.path; })
     : [];
-  const structuralRoots = scan.files
-    .filter(function (f) { return structuralScore(f.path) >= 1500; })
-    .slice(0, 12)
-    .map(function (f) { return f.path; });
+  const structuralRoots = (hasSeeds || terms.length > 0)
+    ? []
+    : scan.files
+        .filter(function (f) { return structuralScore(f.path) >= 1500; })
+        .slice(0, 12)
+        .map(function (f) { return f.path; });
   const roots = Array.from(new Set(
     Array.from(seeds.selected).concat(Array.from(changed.selected), focusRoots, structuralRoots)
   ));
@@ -106,9 +156,9 @@ export function buildSmartPack(options) {
     }
   }
 
-  const reverseDepth = options.reverseDependencyDepth === undefined
-    ? 1
-    : Math.max(0, options.reverseDependencyDepth);
+  const reverseDepth = options.reverseDependencyDepth !== undefined
+    ? Math.max(0, options.reverseDependencyDepth)
+    : (options.changedFiles && options.changedFiles.length && !hasSeeds ? 1 : 0);
   if (reverseDepth > 0 && roots.length) {
     const reverse = new Map();
     for (const file of scan.files) {
@@ -164,7 +214,7 @@ export function buildSmartPack(options) {
       bytes: file.bytes,
       score: scores.get(file.path) || 0,
       estimatedTokens: Math.max(1, Math.ceil(file.bytes / 3.6)),
-      required: seeds.exact.has(file.path),
+      required: seeds.exact.has(file.path) || seeds.selected.has(file.path),
       reasons: Array.from(reasons.get(file.path) || new Set(["repository-context"])).sort()
     };
   });
