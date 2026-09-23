@@ -200,7 +200,7 @@ export function buildSmartPack(options) {
 
   const reverseDepth = options.reverseDependencyDepth !== undefined
     ? Math.max(0, options.reverseDependencyDepth)
-    : (options.changedFiles && options.changedFiles.length && !hasSeeds ? 1 : 0);
+    : (options.changedFiles && options.changedFiles.length && !hasSeeds && !terms.length ? 1 : 0);
   if (reverseDepth > 0 && roots.length) {
     const reverse = new Map();
     for (const file of scan.files) {
@@ -282,7 +282,7 @@ export function buildSmartPack(options) {
                candidate.reasons.some(function (r) {
                  return r.startsWith("dependency-of:") ||
                         r.startsWith("related-test:") ||
-                        r.startsWith("impacted-by:") ||
+                        (options.reverseDependencyDepth > 0 && r.startsWith("impacted-by:")) ||
                         r === "changed-file" ||
                         r === "selected-file" ||
                         r === "selected-directory";

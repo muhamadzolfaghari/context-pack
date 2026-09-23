@@ -125,7 +125,7 @@ export function printTargets(version) {
 export function parseArgs(argv, root) {
   const options = {
     command: null, seeds: [], ignore: [], format: "markdown", budget: null, target: null,
-    dependencyDepth: 4, reverseDependencyDepth: 1, maxFileBytes: 1000000, focus: "",
+    dependencyDepth: undefined, reverseDependencyDepth: undefined, maxFileBytes: 1000000, focus: "",
     stdout: false, copy: false, output: null, restore: null, overwrite: false,
     changed: false, since: null, preset: null, redact: false, cache: true,
     dryRun: false, backup: true, applySource: null, revertTimestamp: null
