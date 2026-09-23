@@ -79,17 +79,29 @@ Run `ctxlab` without arguments. The terminal UI now opens with a target selector
 
 | Key | Action |
 | --- | --- |
-| ↑ / ↓ | Navigate |
-| Enter / → | Open directory or select file |
-| Space | Toggle selection |
-| ← | Back |
-| Ctrl+E | Build the smart context pack |
-| `f` | Toggle Markdown / JSON |
-| `t` | Reopen the target selector |
-| `b` | Open the custom budget selector |
-| `r` | Restore a JSON pack |
-| Esc | Clear / back |
-| q / Ctrl+C | Quit |
+| `↑` / `↓` | Navigate tree and modal dialogs |
+| `Enter` / `→` | Open directory or select item |
+| `Space` | Toggle file / directory selection |
+| `p` | Open Focus prompt modal (task-focused context packing) |
+| `y` | Instant Quick-Copy context pack to clipboard |
+| `t` | Switch LLM Target profile (ChatGPT, Claude, DeepSeek) |
+| `b` | Switch Token Budget threshold |
+| `r` | Toggle Secret Redaction (API keys & private keys) |
+| `f` | Toggle Output Format (Markdown / JSON) |
+| `Esc` | Clear selection / close modal |
+| `q` / `Ctrl+C` | Quit Context Lab |
+
+## Focused Context & Task-Oriented Packing
+
+When addressing a specific bug or feature, use `--focus` (or press `p` in the TUI). Context Lab pinpoints the exact matching roots, pulls their direct local dependencies and matching tests, and strictly omits unrelated files:
+
+```bash
+# Task-specific context pack with safe budget for Claude
+ctxlab --focus "auth token rotation" --target claude --copy
+
+# Specific subsystem with focus prioritization
+ctxlab src/core --focus "token estimation" --target deepseek -o pack.md
+```
 
 ## Selection model
 
