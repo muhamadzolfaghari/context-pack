@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import Table from "cli-table3";
+import boxen from "boxen";
+import pc from "picocolors";
 import { applyDump } from "../../core/dump.js";
-import { c, padEnd, readClipboard } from "../terminal.js";
+import { readClipboard } from "../terminal.js";
 
 export function handleApplyCommand(source, options, root) {
   const absRoot = path.resolve(root || process.cwd());
@@ -23,37 +26,57 @@ export function handleApplyCommand(source, options, root) {
   });
 
   if (result.plan.length === 0) {
-    console.log(c.yellow + "No valid file modifications found in input." + c.reset);
+    console.log(pc.yellow("No valid file modifications found in input."));
     return result;
   }
 
-  const headerTag = dryRun ? " " + c.bold + c.amber + "[DRY RUN PRE-FLIGHT]" + c.reset : "";
-  console.log(c.bold + c.cyan + "◆ Context Lab Enterprise" + c.reset + " — " + c.bold + "Apply AI Response" + headerTag + c.reset + "\n");
-  for (const item of result.plan) {
-    let tag = c.dim + "[UNCHANGED]" + c.reset;
-    let delta = c.dim + item.lines + " lines" + c.reset;
-    if (item.status === "create") {
-      tag = c.bold + c.emerald + "[CREATE]   " + c.reset;
-      delta = c.emerald + "+" + item.lines + " lines" + c.reset;
-    } else if (item.status === "update") {
-      tag = c.bold + c.amber + "[UPDATE]   " + c.reset;
-      delta = c.amber + "+" + item.additions + ", -" + item.deletions + " lines" + c.reset;
+  const headerTag = dryRun ? " " + pc.bold(pc.yellow("[DRY RUN PRE-FLIGHT]")) : "";
+  console.log(pc.bold(pc.cyan("◆ Context Lab Enterprise")) + " — " + pc.bold("Apply AI Response") + headerTag + "\n");
+
+  const table = new Table({
+    head: [pc.bold(pc.cyan("ACTION")), pc.bold(pc.cyan("TARGET FILE PATH")), pc.bold(pc.cyan("DIFF DELTA"))],
+    style: { head: [], border: ["dim"] },
+    chars: {
+      "top": "─", "top-mid": "┬", "top-left": "┌", "top-right": "┐",
+      "bottom": "─", "bottom-mid": "┴", "bottom-left": "└", "bottom-right": "┘",
+      "left": "│", "left-mid": "├", "mid": "─", "mid-mid": "┼",
+      "right": "│", "right-mid": "┤", "middle": "│"
     }
-    console.log("  " + tag + " " + padEnd(item.path, 40) + " " + delta);
+  });
+
+  for (const item of result.plan) {
+    let tag = pc.dim("[UNCHANGED]");
+    let delta = pc.dim(item.lines + " lines");
+    if (item.status === "create") {
+      tag = pc.bold(pc.green("[CREATE]"));
+      delta = pc.green("+" + item.lines + " lines");
+    } else if (item.status === "update") {
+      tag = pc.bold(pc.yellow("[UPDATE]"));
+      delta = pc.yellow("+" + item.additions + ", -" + item.deletions + " lines");
+    }
+    table.push([tag, item.path, delta]);
   }
 
+  console.log(table.toString());
   console.log("");
+
   if (dryRun) {
-    console.log(c.cyan + "Pre-flight audit complete: " + result.createdCount + " to create, " + result.updatedCount + " to update, " + result.unchangedCount + " unchanged." + c.reset);
-    console.log(c.dim + "Run without --dry-run to apply these changes directly to your project." + c.reset);
+    console.log(pc.cyan("Pre-flight audit complete: ") + pc.bold(result.createdCount + " to create, " + result.updatedCount + " to update, " + result.unchangedCount + " unchanged."));
+    console.log(pc.dim("Run without --dry-run to apply these changes directly to your project."));
   } else {
-    console.log(c.bold + c.emerald + "✔ Successfully applied " + result.appliedCount + " files (" +
-      result.createdCount + " created, " + result.updatedCount + " updated)." + c.reset);
+    let summaryText = pc.bold(pc.green("✔ Successfully applied " + result.appliedCount + " files")) +
+      pc.dim(" (" + result.createdCount + " created, " + result.updatedCount + " updated)");
     if (result.backupDir) {
       const relBackup = path.relative(absRoot, result.backupDir);
-      console.log(c.dim + "🛡️ Enterprise backup created: " + relBackup + c.reset);
-      console.log(c.dim + "To rollback changes anytime: ctxlab revert " + result.timestamp + c.reset);
+      summaryText += "\n\n" + pc.cyan("🛡️ Enterprise Backup: ") + relBackup +
+        "\n" + pc.dim("To rollback changes anytime: ctxlab revert " + result.timestamp);
     }
+    console.log(boxen(summaryText, {
+      padding: { top: 0, bottom: 0, left: 2, right: 2 },
+      margin: { top: 0, bottom: 0, left: 0, right: 0 },
+      borderStyle: "round",
+      borderColor: "green"
+    }));
   }
 
   return result;

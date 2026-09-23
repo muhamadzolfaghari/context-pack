@@ -1,73 +1,123 @@
+import cliui from "cliui";
+import Table from "cli-table3";
+import pc from "picocolors";
 import { TARGET_PROFILES, parseBudget, formatTokens } from "../core/constants.js";
 import { loadProjectPresets } from "../core/presets.js";
-import { c, isColor } from "./terminal.js";
 
 export function printHelp(version) {
   const ver = version ? "v" + version : "v1.3.0";
-  console.log([
-    c.bold + c.cyan + "Context Lab " + c.reset + c.dim + ver + c.reset + " — Smart, token-budgeted repository context packer for LLMs",
-    "",
-    c.bold + "Usage:" + c.reset,
-    "  ctxlab [paths...] [options]            Interactive explorer or export pack",
-    "  ctxlab dump [paths...] [options]       Export dump with AI Assistant Instructions protocol",
-    "  ctxlab apply [file] [options]          Apply AI response (from clipboard or file) to project",
-    "  ctxlab revert [timestamp]              Revert changes from a previous backup",
-    "",
-    c.bold + "Options:" + c.reset,
-    "  --focus, --task <text>   Focus description used for smart relevance",
-    "  --target <provider>      Budget preset: chatgpt, claude, deepseek, chatbox",
-    "  --list-targets           Show target presets and safe budgets",
-    "  --preset, -p <name>      Apply team preset from .ctxlabrc.json or package.json",
-    "  --budget <tokens>        Explicit token budget; overrides --target",
-    "  --format <md|json>       Output format (default: markdown)",
-    "  --output, -o <file>      Write output to a file",
-    "  --stdout                 Print output to stdout",
-    "  --copy                   Copy output to the clipboard",
-    "  --redact                 Mask API keys, tokens, and private credentials",
-    "  --no-cache               Bypass .ctxlab/cache.json",
-    "  --dry-run                Preview changes without writing files (for apply)",
-    "  --no-backup              Skip automatic safety backup before applying",
-    "  --depth <n>              Local dependency expansion depth (default: 4)",
-    "  --impact-depth <n>       Reverse-dependency impact depth (default: 1)",
-    "  --changed                Prioritize staged, unstaged, and untracked files",
-    "  --since <git-ref>        Prioritize files changed since a git ref",
-    "  --max-file-bytes <n>     Skip larger files (default: 1000000)",
-    "  --ignore <pattern>       Add ignore pattern; repeatable",
-    "  --restore <file.json>    Safely restore a JSON or Markdown pack",
-    "  --overwrite, -y          Allow restore or apply to replace existing files",
-    "  --version, -v            Print version",
-    "  --help, -h               Show help",
-    "",
-    c.bold + "Examples:" + c.reset,
-    "  ctxlab dump src/auth --focus \"login flow\" --copy",
-    "  ctxlab apply                           # Parse clipboard & update project files",
-    "  ctxlab apply response.md --dry-run     # Preview proposed changes",
-    "  ctxlab revert                          # Restore files from latest backup",
-    "  ctxlab --preset review --copy",
-    "  ctxlab --target chatgpt --redact --copy",
-    "  ctxlab --restore"
-  ].join("\n"));
+  const cols = Math.min(process.stdout.columns || 80, 100);
+  const ui = cliui({ width: cols });
+
+  console.log(pc.bold(pc.cyan("◆ Context Lab Enterprise")) + " " + pc.dim(ver) + " — " + pc.bold("Smart Repository Context Packer & AI Sync") + "\n");
+
+  console.log(pc.bold("Commands:"));
+  const cmdUi = cliui({ width: cols });
+  cmdUi.div(
+    { text: pc.cyan("  ctxlab"), width: 34 },
+    { text: "Launch interactive full-screen TUI repository explorer" }
+  );
+  cmdUi.div(
+    { text: pc.cyan("  ctxlab dump [paths...]"), width: 34 },
+    { text: "Export dump with AI Assistant Instructions protocol" }
+  );
+  cmdUi.div(
+    { text: pc.cyan("  ctxlab apply [file]"), width: 34 },
+    { text: "Apply AI response (from clipboard or file) safely to project" }
+  );
+  cmdUi.div(
+    { text: pc.cyan("  ctxlab revert [timestamp]"), width: 34 },
+    { text: "Rollback file changes to a previous backup snapshot" }
+  );
+  console.log(cmdUi.toString());
+  console.log("");
+
+  console.log(pc.bold("Options:"));
+  const optUi = cliui({ width: cols });
+  const optionsList = [
+    ["--focus, --task <text>", "Task objective used for semantic dependency pruning"],
+    ["--target <provider>", "Budget profile: chatgpt, claude, deepseek, chatbox"],
+    ["--list-targets", "Display target provider profiles and safe budget ceilings"],
+    ["--preset, -p <name>", "Apply team configuration from .ctxlabrc.json or package.json"],
+    ["--budget <tokens>", "Explicit token ceiling (e.g. 32k, 128k); overrides target"],
+    ["--format <md|json>", "Pack output format (markdown or json, default: markdown)"],
+    ["--output, -o <file>", "Write context pack directly to file"],
+    ["--stdout", "Output context pack directly to standard out"],
+    ["--copy", "Automatically copy context pack to system clipboard"],
+    ["--redact", "Mask private keys, API tokens, and secret credentials"],
+    ["--no-cache", "Bypass incremental hash cache (.ctxlab/cache.json)"],
+    ["--dry-run", "Preview file diff modifications without modifying disk (apply)"],
+    ["--no-backup", "Skip automatic snapshot backup before applying changes"],
+    ["--depth <n>", "Local dependency expansion search depth (default: 4)"],
+    ["--impact-depth <n>", "Reverse-dependency consumer search depth (default: 1)"],
+    ["--changed", "Prioritize staged, unstaged, and untracked git files"],
+    ["--since <ref>", "Prioritize files modified since git branch or commit ref"],
+    ["--max-file-bytes <n>", "Exclude files exceeding byte threshold (default: 1000000)"],
+    ["--ignore <pattern>", "Custom ignore glob pattern; repeatable"],
+    ["--restore <file>", "Restore repository from markdown code blocks or JSON dump"],
+    ["--overwrite, -y", "Allow file writes to overwrite existing files on disk"],
+    ["--version, -v", "Display installed Context Lab version"],
+    ["--help, -h", "Show this help screen"]
+  ];
+
+  for (const [flag, desc] of optionsList) {
+    optUi.div(
+      { text: pc.cyan("  " + flag), width: 34 },
+      { text: desc }
+    );
+  }
+  console.log(optUi.toString());
+  console.log("");
+
+  console.log(pc.bold("Examples:"));
+  console.log("  " + pc.dim("$") + " ctxlab dump src/auth --focus \"token rotation\" --copy");
+  console.log("  " + pc.dim("$") + " ctxlab apply                           " + pc.dim("# Parse clipboard & apply to project"));
+  console.log("  " + pc.dim("$") + " ctxlab apply response.md --dry-run     " + pc.dim("# Audit diff without writing files"));
+  console.log("  " + pc.dim("$") + " ctxlab revert                          " + pc.dim("# Rollback to latest safety snapshot"));
+  console.log("  " + pc.dim("$") + " ctxlab --target claude --redact --copy");
 }
 
 export function printTargets(version) {
-  const ver = version ? " " + c.dim + "v" + version + c.reset : "";
-  console.log(c.bold + c.cyan + "Context Lab" + c.reset + ver + " — Target Profiles & Safe Budgets\n");
-  const rows = Object.values(TARGET_PROFILES).map(function (profile) {
-    return [
-      c.cyan + profile.id.padEnd(10) + c.reset,
-      (c.bold + formatTokens(profile.safeBudget)).padStart(isColor ? 14 : 9) + " safe" + c.reset,
-      (profile.contextWindow ? formatTokens(profile.contextWindow) + " ctx" : " generic").padStart(10),
-      c.dim + profile.modelFamily + c.reset
-    ].join("  ");
+  const ver = version ? " " + pc.dim("v" + version) : "";
+  console.log(pc.bold(pc.cyan("◆ Context Lab Enterprise")) + ver + " — " + pc.bold("LLM Target Profiles & Safe Budgets\n"));
+
+  const table = new Table({
+    head: [
+      pc.bold(pc.cyan("TARGET")),
+      pc.bold(pc.cyan("SAFE BUDGET")),
+      pc.bold(pc.cyan("CONTEXT LIMIT")),
+      pc.bold(pc.cyan("RECOMMENDED WORKFLOW"))
+    ],
+    style: { head: [], border: ["dim"] },
+    chars: {
+      "top": "─", "top-mid": "┬", "top-left": "┌", "top-right": "┐",
+      "bottom": "─", "bottom-mid": "┴", "bottom-left": "└", "bottom-right": "┘",
+      "left": "│", "left-mid": "├", "mid": "─", "mid-mid": "┼",
+      "right": "│", "right-mid": "┤", "middle": "│"
+    }
   });
-  console.log([
-    c.dim + "Target      Safe pack   Context    Model family" + c.reset,
-    c.dim + "──────────  ─────────   ─────────  ──────────────────────────────────" + c.reset,
-    ...rows,
-    "",
-    c.dim + "Safe pack budgets reserve room for output, chat history, system overhead, and reasoning." + c.reset,
-    c.dim + "Use --budget <tokens> to override any preset." + c.reset
-  ].join("\n"));
+
+  const workflows = {
+    chatgpt: "Agile feature workflows & quick PR reviews",
+    claude: "Full subsystem audits & large codebases",
+    deepseek: "Deep architectural reasoning & math logic",
+    chatbox: "Local offline models & small context windows"
+  };
+
+  for (const profile of Object.values(TARGET_PROFILES)) {
+    const ctx = profile.contextWindow ? formatTokens(profile.contextWindow) + " ctx" : "Standard";
+    const wf = workflows[profile.id] || profile.modelFamily;
+    table.push([
+      pc.bold(pc.cyan(profile.id)),
+      pc.bold(pc.green(formatTokens(profile.safeBudget) + " tok")),
+      pc.dim(ctx),
+      wf
+    ]);
+  }
+
+  console.log(table.toString());
+  console.log("\n" + pc.dim("Safe budgets reserve headroom for LLM reasoning, chat history, and code output.") +
+    "\n" + pc.dim("Use --budget <tokens> to specify custom allocation."));
 }
 
 export function parseArgs(argv, root) {

@@ -7,7 +7,12 @@ for (const file of required) {
   if (!fs.existsSync(file)) throw new Error("Missing publish file: " + file);
 }
 if (pkg.name !== "ctxlab") throw new Error("Package name must be ctxlab.");
-if (pkg.dependencies && Object.keys(pkg.dependencies).length) throw new Error("Runtime dependencies are not allowed.");
+const allowedDeps = new Set(["boxen", "cli-table3", "cliui", "picocolors"]);
+if (pkg.dependencies) {
+  for (const dep of Object.keys(pkg.dependencies)) {
+    if (!allowedDeps.has(dep)) throw new Error("Unexpected runtime dependency: " + dep);
+  }
+}
 console.log("package verification passed");
 
 const cli = fs.readFileSync("bin/ctxlab.mjs", "utf8");

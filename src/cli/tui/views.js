@@ -1,4 +1,6 @@
 import path from "node:path";
+import Table from "cli-table3";
+import boxen from "boxen";
 import { TARGET_PROFILES, formatTokens } from "../../core/constants.js";
 import { c, stripAnsi, truncate, padEnd, formatBytes, isColor, badge, gitBranch } from "../terminal.js";
 import { currentBudget, selectedSeedEstimate, getSelectionState } from "./state.js";
@@ -170,19 +172,26 @@ export function renderBudgetSelector(state, version) {
 }
 
 export function renderFocusModal(state, version) {
-  const cols = Math.max(64, process.stdout.columns || 80);
-  const sep = c.dim + "─".repeat(Math.min(cols - 4, 84)) + c.reset;
   const ver = version ? "v" + version : "v1.3.0";
-  const lines = [];
+  const lines = [""];
 
-  lines.push("");
-  lines.push("  " + c.bold + c.cyan + "◆ CONTEXT LAB ENTERPRISE" + c.reset + " " + c.dim + ver + c.reset + " — " + c.bold + "Task Objective & Dependency Focus" + c.reset);
-  lines.push("  " + c.dim + "Context Lab analyzes this task prompt to prioritize files, follow imports, and pull tests." + c.reset);
-  lines.push("  " + sep);
-  lines.push("  " + c.bold + "Objective:" + c.reset + " " + c.cyan + (state.focusInput || c.dim + "(type task, e.g. refactor auth token rotation and update tests)" + c.reset) + c.bold + "█" + c.reset);
-  lines.push("  " + sep);
-  lines.push("  " + c.bold + "Enter" + c.reset + c.dim + " save focus  ·  " + c.reset + c.bold + "Esc" + c.reset + c.dim + " cancel / clear" + c.reset);
+  const content = [
+    c.bold + c.cyan + "◆ TASK OBJECTIVE & DEPENDENCY FOCUS" + c.reset + "  " + c.dim + ver + c.reset,
+    c.dim + "Context Lab analyzes this task prompt to prioritize files, follow imports, and pull tests." + c.reset,
+    "",
+    c.bold + "Objective: " + c.reset + c.cyan + (state.focusInput || c.dim + "(type task, e.g. refactor auth token rotation and update tests)" + c.reset) + c.bold + "█" + c.reset,
+    "",
+    c.bold + "Enter" + c.reset + c.dim + " save focus  ·  " + c.reset + c.bold + "Esc" + c.reset + c.dim + " cancel / clear" + c.reset
+  ].join("\n");
 
+  const box = boxen(content, {
+    padding: { top: 1, bottom: 1, left: 2, right: 2 },
+    margin: { top: 0, bottom: 0, left: 2, right: 0 },
+    borderStyle: "round",
+    borderColor: "cyan"
+  });
+
+  box.split("\n").forEach(function (l) { lines.push(l); });
   writeFrame(lines);
 }
 
@@ -213,15 +222,18 @@ export function renderRestoreModal(state, version) {
     lines.push("  " + c.dim + "Impact Summary: " + c.reset + summaryBadge);
     lines.push("  " + sep);
 
-    lines.push(
-      "    " +
-      padEnd(c.dim + "ACTION" + c.reset, 14) +
-      padEnd(c.dim + "TARGET FILE PATH" + c.reset, 42) +
-      c.dim + "DIFF DELTA" + c.reset
-    );
-    lines.push("  " + sep);
+    const table = new Table({
+      head: [c.bold(c.cyan("ACTION")), c.bold(c.cyan("TARGET FILE PATH")), c.bold(c.cyan("DIFF DELTA"))],
+      style: { head: [], border: ["dim"] },
+      chars: {
+        "top": "─", "top-mid": "┬", "top-left": "┌", "top-right": "┐",
+        "bottom": "─", "bottom-mid": "┴", "bottom-left": "└", "bottom-right": "┘",
+        "left": "│", "left-mid": "├", "mid": "─", "mid-mid": "┼",
+        "right": "│", "right-mid": "┤", "middle": "│"
+      }
+    });
 
-    for (const item of state.applyPlan.slice(0, 14)) {
+    for (const item of state.applyPlan.slice(0, 12)) {
       let tag = c.dim + "[UNCHANGED]" + c.reset;
       let delta = c.dim + item.lines + " lines" + c.reset;
       if (item.status === "create") {
@@ -231,10 +243,13 @@ export function renderRestoreModal(state, version) {
         tag = c.bold + c.amber + "[UPDATE]   " + c.reset;
         delta = c.amber + "+" + item.additions + ", -" + item.deletions + " lines" + c.reset;
       }
-      lines.push("    " + tag + " " + padEnd(item.path, 40) + " " + delta);
+      table.push([tag, item.path, delta]);
     }
-    if (state.applyPlan.length > 14) {
-      lines.push("    " + c.dim + "... and " + (state.applyPlan.length - 14) + " more files" + c.reset);
+
+    table.toString().split("\n").forEach(function (l) { lines.push("  " + l); });
+
+    if (state.applyPlan.length > 12) {
+      lines.push("    " + c.dim + "... and " + (state.applyPlan.length - 12) + " more files" + c.reset);
     }
 
     lines.push("  " + sep);
@@ -260,31 +275,34 @@ export function renderRestoreModal(state, version) {
 }
 
 export function renderDoneModal(state, version) {
-  const cols = Math.max(64, process.stdout.columns || 80);
-  const sep = c.dim + "─".repeat(Math.min(cols - 4, 84)) + c.reset;
   const ver = version ? "v" + version : "v1.3.0";
-  const lines = [];
-
-  lines.push("");
-  lines.push("  " + c.bold + c.emerald + "✔ CONTEXT PACK BUILT & COPIED" + c.reset + " " + c.dim + ver + c.reset);
-  lines.push("  " + sep);
+  const lines = [""];
 
   if (state.builtPack) {
     const headroom = Math.max(0, state.builtPack.budget - state.builtPack.totalTokens);
-    lines.push("  " + padEnd(c.dim + "Files Selected:" + c.reset, 24) + c.bold + state.builtPack.selectedCount + c.reset + " of " + state.builtPack.candidateCount + " scanned");
-    lines.push("  " + padEnd(c.dim + "Token Payload:" + c.reset, 24) + c.bold + c.emerald + formatTokens(state.builtPack.totalTokens) + c.reset + " / " + formatTokens(state.builtPack.budget) + " safe budget limit");
-    lines.push("  " + padEnd(c.dim + "Response Headroom:" + c.reset, 24) + c.cyan + formatTokens(headroom) + " tokens free" + c.reset + c.dim + " (reserved for reasoning & output)" + c.reset);
-    lines.push("  " + padEnd(c.dim + "Target LLM Profile:" + c.reset, 24) + (state.builtPack.target ? c.cyan + state.builtPack.target.id + " (" + state.builtPack.target.modelFamily + ")" : "custom capacity") + c.reset);
-    lines.push("  " + padEnd(c.dim + "Export Format:" + c.reset, 24) + c.bold + state.format + c.reset);
-    if (state.builtPack.focus) {
-      lines.push("  " + padEnd(c.dim + "Task Focus:" + c.reset, 24) + c.amber + state.builtPack.focus + c.reset);
-    }
-  }
+    const content = [
+      c.bold + c.emerald + "✔ CONTEXT PACK BUILT & COPIED" + c.reset + "  " + c.dim + ver + c.reset,
+      "",
+      c.dim + "Files Selected:     " + c.reset + c.bold + state.builtPack.selectedCount + c.reset + " of " + state.builtPack.candidateCount + " scanned",
+      c.dim + "Token Payload:      " + c.reset + c.bold + c.emerald + formatTokens(state.builtPack.totalTokens) + c.reset + " / " + formatTokens(state.builtPack.budget) + " safe budget limit",
+      c.dim + "Response Headroom:  " + c.reset + c.cyan + formatTokens(headroom) + " tokens free" + c.reset + c.dim + " (reserved for reasoning & output)" + c.reset,
+      c.dim + "Target LLM Profile: " + c.reset + (state.builtPack.target ? c.cyan + state.builtPack.target.id + " (" + state.builtPack.target.modelFamily + ")" : "custom capacity") + c.reset,
+      c.dim + "Export Format:      " + c.reset + c.bold + state.format + c.reset,
+      state.builtPack.focus ? c.dim + "Task Focus:         " + c.reset + c.amber + state.builtPack.focus + c.reset : null,
+      "",
+      state.message || (c.emerald + "✔ Context pack copied to clipboard and ready for LLM." + c.reset),
+      "",
+      c.bold + "Enter / Esc" + c.reset + c.dim + " return to explorer  ·  " + c.reset + c.bold + "c / y" + c.reset + c.dim + " copy again  ·  " + c.reset + c.bold + "q" + c.reset + c.dim + " quit" + c.reset
+    ].filter(Boolean).join("\n");
 
-  lines.push("  " + sep);
-  lines.push("  " + (state.message || (c.emerald + "✔ Context pack copied to clipboard and ready for LLM." + c.reset)));
-  lines.push("  " + sep);
-  lines.push("  " + c.bold + "Enter / Esc" + c.reset + c.dim + " return to explorer  ·  " + c.reset + c.bold + "c / y" + c.reset + c.dim + " copy again  ·  " + c.reset + c.bold + "q" + c.reset + c.dim + " quit" + c.reset);
+    const box = boxen(content, {
+      padding: { top: 1, bottom: 1, left: 2, right: 2 },
+      margin: { top: 0, bottom: 0, left: 2, right: 0 },
+      borderStyle: "round",
+      borderColor: "green"
+    });
+    box.split("\n").forEach(function (l) { lines.push(l); });
+  }
 
   writeFrame(lines);
 }

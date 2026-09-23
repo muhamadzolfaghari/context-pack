@@ -56,5 +56,11 @@
   "bugs": {
     "url": "https://github.com/muhamadzolfaghari/ctxlab/issues"
   },
-  "homepage": "https://github.com/muhamadzolfaghari/ctxlab#readme"
+  "homepage": "https://github.com/muhamadzolfaghari/ctxlab#readme",
+  "dependencies": {
+    "boxen": "^9.0.0",
+    "cli-table3": "^0.6.5",
+    "cliui": "^9.0.1",
+    "picocolors": "^1.1.1"
+  }
 }
