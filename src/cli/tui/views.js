@@ -2,7 +2,7 @@ import path from "node:path";
 import Table from "cli-table3";
 import boxen from "boxen";
 import { TARGET_PROFILES, formatTokens } from "../../core/constants.js";
-import { c, stripAnsi, truncate, padEnd, formatBytes, isColor, badge, gitBranch } from "../terminal.js";
+import { c, stripAnsi, truncate, padEnd, formatBytes, isColor, badge, gitBranch, btn } from "../terminal.js";
 import { currentBudget, selectedSeedEstimate, getSelectionState } from "./state.js";
 
 // Atomic frame writer: moves cursor to home (\x1b[H), outputs all lines in a single buffer,
@@ -77,7 +77,9 @@ export function renderTargetSelector(state, version) {
   state.targetChoices.forEach(function (id, index) {
     const active = index === state.targetCursor;
     const pointer = active ? c.bold + c.cyan + "❯" + c.reset : " ";
-    const keyNum = c.dim + (index + 1) + "." + c.reset;
+    const keyNum = active
+      ? c.bgCyan + c.black + c.bold + " " + (index + 1) + " " + c.reset
+      : c.bgSlate + c.bold + c.white + " " + (index + 1) + " " + c.reset;
 
     if (id === null) {
       const targetCol = padEnd(c.bold + "custom" + c.reset + "  " + badge("MANUAL", c.amber, c.bgDark), 22);
@@ -113,7 +115,13 @@ export function renderTargetSelector(state, version) {
   });
 
   lines.push("  " + sep);
-  lines.push("  " + c.dim + "↑/↓ or 1-" + state.targetChoices.length + " select  ·  " + c.reset + c.bold + "Enter" + c.reset + c.dim + " confirm  ·  " + c.reset + c.bold + "q" + c.reset + c.dim + " quit" + c.reset);
+  const targetBtns = [
+    btn("↑/↓", "Select"),
+    btn("1-" + state.targetChoices.length, "Jump"),
+    btn("↵ Enter", "Confirm", "cyan"),
+    btn("⎋ Esc / q", "Quit")
+  ].join("   ");
+  lines.push("  " + targetBtns);
 
   writeFrame(lines);
 }
@@ -141,7 +149,9 @@ export function renderBudgetSelector(state, version) {
   BUDGET_LIST.forEach(function (budget, index) {
     const active = index === state.budgetCursor;
     const pointer = active ? c.bold + c.cyan + "❯" + c.reset : " ";
-    const keyNum = c.dim + (index + 1) + "." + c.reset;
+    const keyNum = active
+      ? c.bgCyan + c.black + c.bold + " " + (index + 1) + " " + c.reset
+      : c.bgSlate + c.bold + c.white + " " + (index + 1) + " " + c.reset;
     const label = formatTokens(budget).padStart(6) + " tokens";
 
     let desc = "Standard balanced context pack";
@@ -166,7 +176,13 @@ export function renderBudgetSelector(state, version) {
   });
 
   lines.push("  " + sep);
-  lines.push("  " + c.dim + "↑/↓ or 1-" + BUDGET_LIST.length + " select  ·  " + c.reset + c.bold + "Enter" + c.reset + c.dim + " save  ·  " + c.reset + c.bold + "Esc" + c.reset + c.dim + " back" + c.reset);
+  const budgetBtns = [
+    btn("↑/↓", "Select"),
+    btn("1-" + BUDGET_LIST.length, "Jump"),
+    btn("↵ Enter", "Save Budget", "cyan"),
+    btn("⎋ Esc", "Back")
+  ].join("   ");
+  lines.push("  " + budgetBtns);
 
   writeFrame(lines);
 }
@@ -181,7 +197,7 @@ export function renderFocusModal(state, version) {
     "",
     c.bold + "Objective: " + c.reset + c.cyan + (state.focusInput || c.dim + "(type task, e.g. refactor auth token rotation and update tests)" + c.reset) + c.bold + "█" + c.reset,
     "",
-    c.bold + "Enter" + c.reset + c.dim + " save focus  ·  " + c.reset + c.bold + "Esc" + c.reset + c.dim + " cancel / clear" + c.reset
+    [btn("↵ Enter", "Save Objective", "cyan"), btn("⎋ Esc", "Cancel / Clear")].join("   ")
   ].join("\n");
 
   const box = boxen(content, {
@@ -255,7 +271,12 @@ export function renderRestoreModal(state, version) {
     lines.push("  " + sep);
     lines.push("  " + c.dim + "🛡️ Enterprise Safety: Snapshots saved to .ctxlab/backups/ (revert anytime via 'ctxlab revert')" + c.reset);
     lines.push("  " + sep);
-    lines.push("  " + c.bold + "Enter / y" + c.reset + c.dim + " apply changes with backup  ·  " + c.reset + c.bold + "c" + c.reset + c.dim + " copy response  ·  " + c.reset + c.bold + "Esc" + c.reset + c.dim + " cancel" + c.reset);
+    const restoreBtns = [
+      btn("↵ Enter / y", "Apply Changes (with Backup)", "emerald"),
+      btn("c", "Copy AI Response", "cyan"),
+      btn("⎋ Esc", "Cancel")
+    ].join("   ");
+    lines.push("  " + restoreBtns);
   } else {
     lines.push("  " + sep);
     lines.push("  " + c.dim + "No valid Markdown code blocks or JSON file modifications detected in clipboard." + c.reset);
@@ -268,7 +289,7 @@ export function renderRestoreModal(state, version) {
       lines.push("  " + c.amber + state.message + c.reset);
     }
     lines.push("  " + sep);
-    lines.push("  " + c.bold + "Esc" + c.reset + c.dim + " return to explorer" + c.reset);
+    lines.push("  " + btn("⎋ Esc", "Return to Explorer"));
   }
 
   writeFrame(lines);
@@ -292,7 +313,7 @@ export function renderDoneModal(state, version) {
       "",
       state.message || (c.emerald + "✔ Context pack copied to clipboard and ready for LLM." + c.reset),
       "",
-      c.bold + "Enter / Esc" + c.reset + c.dim + " return to explorer  ·  " + c.reset + c.bold + "c / y" + c.reset + c.dim + " copy again  ·  " + c.reset + c.bold + "q" + c.reset + c.dim + " quit" + c.reset
+      [btn("↵ / ⎋", "Explorer", "cyan"), btn("c / y", "Copy Again", "emerald"), btn("q", "Quit")].join("   ")
     ].filter(Boolean).join("\n");
 
     const box = boxen(content, {
@@ -345,7 +366,13 @@ export function renderPreview(state, version) {
   lines.push("  " + sep);
   const isSelected = state.selected.has(state.previewItem.abs);
   const selectStatus = isSelected ? c.emerald + "[✔ Selected]" + c.reset : c.dim + "[Unselected]" + c.reset;
-  lines.push("  " + selectStatus + "  " + c.dim + "│" + c.reset + "  " + c.bold + "Space" + c.reset + " toggle  ·  " + c.bold + "↑/k" + c.reset + " up  ·  " + c.bold + "↓/j" + c.reset + " down  ·  " + c.bold + "PgUp/PgDn" + c.reset + " scroll  ·  " + c.bold + "Esc/v/q" + c.reset + " back");
+  const previewBtns = [
+    btn("␣ Space", "Toggle Selection", "emerald"),
+    btn("↑/↓", "Scroll"),
+    btn("PgUp/Dn", "Page"),
+    btn("⎋ Esc / q", "Back")
+  ].join("   ");
+  lines.push("  " + selectStatus + "  " + c.dim + "│" + c.reset + "  " + previewBtns);
 
   writeFrame(lines);
 }
@@ -429,7 +456,11 @@ export function renderBrowse(state, visible, version) {
   const end = Math.min(visible.length, start + listHeight);
 
   if (visible.length === 0) {
-    lines.push("\n  " + c.dim + "  (No files or directories match active filter)" + c.reset + "\n");
+    lines.push("");
+    lines.push("  " + c.dim + "(No files or directories match active filter)" + c.reset);
+    for (let i = 2; i < listHeight; i++) {
+      lines.push("");
+    }
   } else {
     for (let i = start; i < end; i++) {
       const item = visible[i];
@@ -504,27 +535,31 @@ export function renderBrowse(state, visible, version) {
     lines.push("  " + c.dim + "Space select · Tab search/tree · y copy pack · r apply AI response" + c.reset);
   }
 
-  // 5. COMMAND PALETTE FOOTER
-  const keys = [
-    c.bold + "[Space]" + c.reset + " Select",
-    c.bold + "[Enter]" + c.reset + " Open",
-    c.bold + "[Tab]" + c.reset + (state.viewMode === "search" ? " Tree" : " Find"),
-    c.bold + "[/]" + c.reset + " Search",
-    c.bold + "[v]" + c.reset + " Preview",
-    c.bold + "[p]" + c.reset + " Focus",
-    c.bold + "[a]" + c.reset + " All",
-    c.bold + "[c]" + c.reset + " Clear",
-    c.bold + "[y]" + c.reset + " Copy",
-    c.bold + "[g]" + c.reset + " Git",
-    c.bold + "[r]" + c.reset + " Apply",
-    c.bold + "[t]" + c.reset + " Target",
-    c.bold + "[Ctrl+E]" + c.reset + " Build",
-    c.bold + "[q]" + c.reset + " Quit"
+  // 5. COMMAND PALETTE FOOTER (Claude CLI button bar)
+  const primaryKeys = [
+    btn("␣ Space", "Select", "emerald"),
+    btn("↵", "Open", "cyan"),
+    btn("y", "Copy Pack", "cyan"),
+    btn("r", "Apply AI", "amber"),
+    btn("p", "Focus"),
+    btn("q", "Quit")
   ];
   if (state.lastResponse || state.applyRaw) {
-    keys.splice(9, 0, c.bold + "[Y]" + c.reset + " Copy Resp");
+    primaryKeys.splice(4, 0, btn("Y", "Copy Resp", "emerald"));
   }
-  lines.push("  " + keys.join("  "));
+
+  const secondaryKeys = [
+    btn("⇥ Tab", state.viewMode === "search" ? "Tree" : "Find"),
+    btn("/", "Filter"),
+    btn("v", "Preview"),
+    btn("g", "Git Diff"),
+    btn("t", "Target"),
+    btn("a", "All"),
+    btn("c", "Clear")
+  ];
+
+  lines.push("  " + primaryKeys.join("   "));
+  lines.push("  " + secondaryKeys.join("   "));
 
   writeFrame(lines);
 }

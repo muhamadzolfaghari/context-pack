@@ -53,6 +53,38 @@ export function badge(text, fg, bg) {
   return b + f + " " + text + " " + c.reset;
 }
 
+export function btn(key, label, color = "default") {
+  if (!isColor) return "[" + key + "] " + label;
+  let bg = c.bgSlate;
+  let fg = c.bold + c.white;
+  let lbl = c.dim;
+
+  if (color === "cyan") {
+    bg = "\x1b[48;5;24m";
+    fg = c.bold + c.cyan;
+    lbl = c.cyan;
+  } else if (color === "emerald" || color === "green") {
+    bg = "\x1b[48;5;22m";
+    fg = c.bold + c.emerald;
+    lbl = c.emerald;
+  } else if (color === "amber" || color === "yellow") {
+    bg = "\x1b[48;5;58m";
+    fg = c.bold + c.amber;
+    lbl = c.amber;
+  } else if (color === "rose" || color === "red") {
+    bg = "\x1b[48;5;52m";
+    fg = c.bold + c.rose;
+    lbl = c.rose;
+  } else if (color === "active") {
+    bg = c.bgCyan;
+    fg = c.bold + c.black;
+    lbl = c.bold + c.cyan;
+  }
+
+  const cap = bg + " " + fg + key + c.reset + bg + " " + c.reset;
+  return cap + " " + lbl + label + c.reset;
+}
+
 export function gitBranch() {
   try {
     return execFileSync("git", ["branch", "--show-current"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || "detached";
