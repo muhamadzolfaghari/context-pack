@@ -457,5 +457,51 @@ test("exactSeeds dumps only selected items without entire codebase", function ()
   assert.deepEqual(Object.keys(pack.files), ["src/target.js"]);
 });
 
+test("focus does not dump entire project even when budget has massive headroom", function () {
+  const root = fixture({
+    "package.json": "{\"name\":\"sample-large\"}",
+    "README.md": "# Project Documentation\nWelcome to our sample project.\n",
+    "src/index.js": "export * from './auth.js';\nexport * from './billing.js';\n",
+    "src/auth.js": "import { authHelper } from './auth-helper.js';\nexport function login(token) { return authHelper(token); }\n",
+    "src/auth-helper.js": "export function authHelper(token) { return Boolean(token); }\n",
+    "src/billing.js": "export function checkoutInvoice() { return 100; }\n",
+    "src/avatar.js": "export function renderAvatar() { return 'avatar'; }\n",
+    "src/reports.js": "export function generateReport() { return 'report'; }\n",
+    "docs/setup.md": "# Setup instructions\nFollow these steps.\n"
+  });
+
+  const pack = buildSmartPack({
+    root: root,
+    focus: "auth token login",
+    target: "chatgpt" // 800k token safe budget
+  });
+
+  assert.ok(pack.files["src/auth.js"], "auth.js must be selected as focus match");
+  assert.ok(pack.files["src/auth-helper.js"], "auth-helper.js must be selected as direct dependency");
+  assert.equal(Boolean(pack.files["package.json"]), false, "package.json must stay out");
+  assert.equal(Boolean(pack.files["README.md"]), false, "README.md must stay out");
+  assert.equal(Boolean(pack.files["src/billing.js"]), false, "billing.js must stay out");
+  assert.equal(Boolean(pack.files["src/avatar.js"]), false, "avatar.js must stay out");
+  assert.equal(Boolean(pack.files["src/reports.js"]), false, "reports.js must stay out");
+  assert.equal(Boolean(pack.files["docs/setup.md"]), false, "setup.md must stay out");
+});
+
+test("exactSeeds retains focus metadata while dumping only selected seeds", function () {
+  const root = fixture({
+    "src/one.js": "export const one = 1;\n",
+    "src/two.js": "export const two = 2;\n"
+  });
+  const pack = buildSmartPack({
+    root: root,
+    seeds: ["src/one.js"],
+    focus: "refactor one",
+    exactSeeds: true
+  });
+  assert.equal(pack.selectedCount, 1);
+  assert.deepEqual(Object.keys(pack.files), ["src/one.js"]);
+  assert.equal(pack.focus, "refactor one");
+});
+
+
 
 

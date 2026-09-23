@@ -93,18 +93,46 @@ export function buildSmartPack(options) {
   }
 
   const hasSeeds = seeds.selected.size > 0;
+  const hasFocus = terms.length > 0;
   for (const file of scan.files) {
-    let score = hasSeeds ? 0 : structuralScore(file.path);
-    if (!hasSeeds && score >= 1500) addReason(file.path, "project-structure");
+    let score = (hasSeeds || hasFocus) ? 0 : structuralScore(file.path);
+    if (!hasSeeds && !hasFocus && score >= 1500) addReason(file.path, "project-structure");
     if (terms.length) {
       const sample = readSample(file.abs).toLowerCase();
       const lowerPath = file.path.toLowerCase();
-      let matched = false;
+      const isMeta = lowerPath.startsWith(".github/") ||
+                     lowerPath.startsWith(".git/") ||
+                     lowerPath === "package.json" ||
+                     lowerPath.endsWith(".md") ||
+                     lowerPath.endsWith(".yml") ||
+                     lowerPath.endsWith(".yaml");
+      let matchedTermsCount = 0;
+      let pathMatches = 0;
+      let totalFreq = 0;
+
       for (const term of terms) {
-        if (lowerPath.includes(term)) { score += 1000; matched = true; }
-        if (sample.includes(term)) { score += 180; matched = true; }
+        let termMatched = false;
+        if (lowerPath.includes(term)) {
+          pathMatches++;
+          termMatched = true;
+        }
+        if (sample.includes(term)) {
+          const occurrences = sample.split(term).length - 1;
+          totalFreq += Math.min(occurrences, 10);
+          termMatched = true;
+        }
+        if (termMatched) matchedTermsCount++;
       }
-      if (matched) addReason(file.path, "focus-match");
+
+      const isSubstantive = pathMatches > 0 || (isMeta ? (matchedTermsCount === terms.length && totalFreq >= 3) : (matchedTermsCount > 0 && totalFreq >= 1));
+
+      if (isSubstantive) {
+        score += pathMatches * 2000;
+        score += matchedTermsCount * 1000;
+        score += totalFreq * 150;
+        if (!isMeta) score += 500;
+        addReason(file.path, "focus-match");
+      }
     }
     scores.set(file.path, score);
   }
@@ -120,13 +148,27 @@ export function buildSmartPack(options) {
     addReason(rel, "changed-file");
   }
 
-  const focusRoots = terms.length
-    ? scan.files
-        .filter(function (f) { return reasons.get(f.path)?.has("focus-match"); })
-        .sort(function (a, b) { return (scores.get(b.path) || 0) - (scores.get(a.path) || 0) || a.path.localeCompare(b.path); })
-        .slice(0, 24)
-        .map(function (f) { return f.path; })
-    : [];
+  let focusRoots = [];
+  if (terms.length && !hasSeeds) {
+    const allMatches = scan.files
+      .filter(function (f) { return reasons.get(f.path)?.has("focus-match"); })
+      .sort(function (a, b) { return (scores.get(b.path) || 0) - (scores.get(a.path) || 0) || a.path.localeCompare(b.path); });
+
+    const pathMatches = allMatches.filter(function (f) {
+      const lower = f.path.toLowerCase();
+      return terms.some(function (t) { return lower.includes(t); });
+    });
+
+    focusRoots = (pathMatches.length > 0
+      ? pathMatches.slice(0, 4).concat(allMatches.filter(function (f) { return !pathMatches.includes(f) && (scores.get(f.path) || 0) >= 2000; }).slice(0, 2))
+      : allMatches.slice(0, 4)
+    ).map(function (f) { return f.path; });
+  }
+
+  for (const rel of focusRoots) {
+    scores.set(rel, (scores.get(rel) || 0) + 5000);
+  }
+
   const structuralRoots = (hasSeeds || terms.length > 0)
     ? []
     : scan.files
@@ -192,7 +234,9 @@ export function buildSmartPack(options) {
 
   const queue = roots.map(function (rel) { return { rel: rel, depth: 0 }; });
   const seen = new Map();
-  const maxDepth = options.dependencyDepth === undefined ? 4 : Math.max(0, options.dependencyDepth);
+  const maxDepth = options.dependencyDepth !== undefined
+    ? Math.max(0, options.dependencyDepth)
+    : (terms.length > 0 ? 1 : 4);
 
   while (queue.length) {
     const item = queue.shift();
@@ -202,7 +246,7 @@ export function buildSmartPack(options) {
     for (const spec of extractLocalImports(full(item.rel))) {
       const dep = resolveLocalImport(spec, item.rel, index);
       if (!dep) continue;
-      scores.set(dep, (scores.get(dep) || 0) + Math.max(1800, 5600 - item.depth * 700));
+      scores.set(dep, (scores.get(dep) || 0) + Math.max(1200, 3200 - item.depth * 800));
       addReason(dep, "dependency-of:" + item.rel);
       queue.push({ rel: dep, depth: item.depth + 1 });
     }
@@ -230,7 +274,26 @@ export function buildSmartPack(options) {
   for (const candidate of candidates) {
     const hasTargeting = terms.length > 0 || seeds.selected.size > 0 || changed.selected.size > 0;
     const relevanceFloor = hasTargeting ? 800 : 450;
-    const useful = candidate.required || candidate.score >= relevanceFloor || selected.length === 0;
+    let useful = candidate.required;
+    if (!useful) {
+      if (terms.length > 0) {
+        const rootSet = new Set(roots);
+        const isRootOrRelated = rootSet.has(candidate.path) ||
+               candidate.reasons.some(function (r) {
+                 return r.startsWith("dependency-of:") ||
+                        r.startsWith("related-test:") ||
+                        r.startsWith("impacted-by:") ||
+                        r === "changed-file" ||
+                        r === "selected-file" ||
+                        r === "selected-directory";
+               });
+        useful = isRootOrRelated && candidate.score >= relevanceFloor;
+      } else if (hasTargeting) {
+        useful = candidate.score >= relevanceFloor;
+      } else {
+        useful = candidate.score >= relevanceFloor || selected.length === 0;
+      }
+    }
     if (!useful) {
       omitted.push({ path: candidate.path, tokens: candidate.estimatedTokens, reason: "low-relevance" });
       continue;

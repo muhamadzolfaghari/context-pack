@@ -98,7 +98,7 @@ export function startInteractive(options, root, version) {
       target: state.activeTarget,
       budget: state.activeTarget ? null : BUDGETS[state.budgetIndex],
       redact: options && options.redact,
-      exactSeeds: state.selected.size > 0 && !state.focusPrompt
+      exactSeeds: state.selected.size > 0
     });
     state.builtPack = pack;
     const output = state.format === "json" ? renderJson(pack) : renderMarkdown(pack);
@@ -419,7 +419,7 @@ export function startInteractive(options, root, version) {
         target: state.activeTarget,
         budget: state.activeTarget ? null : BUDGETS[state.budgetIndex],
         redact: options && options.redact,
-        exactSeeds: state.selected.size > 0 && !state.focusPrompt
+        exactSeeds: state.selected.size > 0
       });
       state.builtPack = pack;
       const output = state.format === "json" ? renderJson(pack) : renderMarkdown(pack);
