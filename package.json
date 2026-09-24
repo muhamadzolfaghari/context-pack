@@ -8,7 +8,7 @@
     "./bin/context-core.mjs": "./bin/context-core.mjs"
   },
   "bin": {
-    "ctxlab": "./bin/ctxlab.mjs"
+    "ctxlab": "bin/ctxlab.mjs"
   },
   "files": [
     "src/",
